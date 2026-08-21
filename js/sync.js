@@ -103,6 +103,23 @@ async function pullTabelle(tabelle) {
   if (error) throw error;
   const zeilen = (data ?? []).map((z) => zeileNachPull(tabelle, z));
   if (NUR_LESEN_TABELLEN.includes(tabelle)) {
+    if (zeilen.length === 0 && (await getAll(tabelle)).length > 0) {
+      // Sicherheitsnetz: eine leere Antwort (z.B. durch einen kurzzeitigen
+      // Netzwerk-/Server-Haenger, oder falls der Pull mitten in einem
+      // Datenbank-Reset landet) darf niemals den kompletten lokalen
+      // Bestand loeschen - sonst kann sich z.B. bei "benutzer" plötzlich
+      // niemand mehr am Tablet anmelden. Ein echtes "es gibt jetzt wirklich
+      // 0 Benutzer/Produkte" ist in der Praxis so unwahrscheinlich, dass
+      // dieses Sicherheitsnetz das deutlich wahrscheinlichere Problem
+      // (leere/unvollstaendige Antwort) abfaengt, ohne die eigentliche
+      // Absicht von ersetzeAlle() (Loeschungen/Deaktivierungen korrekt
+      // uebernehmen) fuer den Normalfall zu beeintraechtigen.
+      console.warn(
+        `Sync: "${tabelle}" lieferte 0 Zeilen, obwohl lokal noch Daten vorhanden sind - ` +
+          "lokaler Bestand bleibt unveraendert, um ihn nicht faelschlich zu leeren."
+      );
+      return 0;
+    }
     await ersetzeAlle(tabelle, zeilen);
   } else {
     await putAll(tabelle, zeilen);
