@@ -1,15 +1,17 @@
 // Geschaeftslogik der Tablet-Kasse - Pendant zu kiosk/repository.py,
 // beschraenkt auf das, was auf dem Tablet gebraucht wird: Verkauf +
-// automatischer Warenausgang, Storno, Kassensturz. Produktverwaltung,
-// Benutzerverwaltung, Warenwirtschaft (Wareneingang/Korrektur/Inventur),
-// Schiedsrichter-Auszahlungen erfassen, Auswertung/Monatsabrechnung und
-// Drucken bleiben bewusst der Windows-App vorbehalten - hier werden die
-// dafuer noetigen Tabellen nur mitgelesen (siehe sync.js).
+// automatischer Warenausgang, Storno, Kassensturz sowie
+// Schiedsrichter-Auszahlungen (erfassen + stornieren). Produktverwaltung,
+// Benutzerverwaltung, uebrige Warenwirtschaft (Wareneingang/Korrektur/
+// Inventur/Beleg-Scan), Auswertung/Monatsabrechnung und Drucken bleiben
+// bewusst der Windows-App vorbehalten - hier werden die dafuer noetigen
+// Tabellen nur mitgelesen (siehe sync.js).
 //
-// Wie am Rechner sind Kassiervorgaenge, Positionen, Lagerbewegungen und
-// Kassenstuerze unveraenderliche Ereignisse: sie werden nur angelegt, nie
-// nachtraeglich veraendert oder geloescht. Ein Storno legt einen neuen,
-// gegenlaeufigen Vorgang an statt den Original-Vorgang zu veraendern.
+// Wie am Rechner sind Kassiervorgaenge, Positionen, Lagerbewegungen,
+// Kassenstuerze und Schiedsrichter-Auszahlungen unveraenderliche
+// Ereignisse: sie werden nur angelegt, nie nachtraeglich veraendert oder
+// geloescht. Ein Storno legt einen neuen, gegenlaeufigen Vorgang an statt
+// den Original-Vorgang zu veraendern.
 
 import { getAll, get, put, geraetId, jetzt, neueId } from "./db.js";
 import { GERAET_NAME } from "./config.js";
@@ -192,6 +194,81 @@ export async function vorgangStornieren(vorgangId, benutzerName, kommentar = nul
 }
 
 // ---------------------------------------------------------------------
+// Schiedsrichter-Auszahlungen - Pendant zu
+// repository.schiedsrichter_auszahlung_erfassen /
+// schiedsrichter_auszahlung_stornieren. Wie ein Kassiervorgang ein
+// unveraenderliches Ereignis - eine Korrektur erfolgt ausschliesslich per
+// Storno, nie durch Aendern/Loeschen. Mindert das Bargeld in der Kasse
+// (siehe Kassensturz-Soll oben), ist aber kein Wareneinsatz.
+// ---------------------------------------------------------------------
+
+export async function schiedsrichterAuszahlungErfassen(
+  veranstaltung,
+  betrag,
+  mannschaft,
+  schiedsrichterName,
+  kommentar,
+  benutzerName
+) {
+  if (betrag == null || betrag <= 0) throw new Error("Betrag muss größer als 0 sein.");
+  const id = neueId();
+  const gid = await geraetId();
+  await put("schiedsrichter_auszahlungen", {
+    id,
+    datum: jetzt(),
+    veranstaltung,
+    mannschaft: mannschaft || null,
+    schiedsrichter_name: schiedsrichterName || null,
+    betrag: rund2(betrag),
+    kommentar: kommentar || null,
+    storno_von: null,
+    rechner: GERAET_NAME,
+    geraet_id: gid,
+    synced: false,
+    synced_at: null,
+    benutzer: benutzerName,
+  });
+  return id;
+}
+
+export async function letzteSchiedsrichterAuszahlungen(limit = 30) {
+  const alle = await getAll("schiedsrichter_auszahlungen");
+  return alle.sort((a, b) => (a.datum < b.datum ? 1 : -1)).slice(0, limit);
+}
+
+export async function schiedsrichterAuszahlungIstStorniert(auszahlungId) {
+  const alle = await getAll("schiedsrichter_auszahlungen");
+  return alle.some((a) => a.storno_von === auszahlungId);
+}
+
+export async function schiedsrichterAuszahlungStornieren(auszahlungId, benutzerName, kommentar = null) {
+  const auszahlung = await get("schiedsrichter_auszahlungen", auszahlungId);
+  if (!auszahlung) throw new Error("Auszahlung nicht gefunden.");
+  if (auszahlung.storno_von) throw new Error("Eine Storno-Auszahlung kann nicht erneut storniert werden.");
+  if (await schiedsrichterAuszahlungIstStorniert(auszahlungId)) {
+    throw new Error("Diese Auszahlung wurde bereits storniert.");
+  }
+  const stornoId = neueId();
+  const gid = await geraetId();
+  await put("schiedsrichter_auszahlungen", {
+    id: stornoId,
+    datum: jetzt(),
+    veranstaltung: auszahlung.veranstaltung,
+    mannschaft: auszahlung.mannschaft,
+    schiedsrichter_name: auszahlung.schiedsrichter_name,
+    betrag: -auszahlung.betrag,
+    kommentar: kommentar || `Storno zu Auszahlung ${auszahlungId}`,
+    storno_von: auszahlungId,
+    rechner: GERAET_NAME,
+    geraet_id: gid,
+    synced: false,
+    synced_at: null,
+    benutzer: benutzerName,
+  });
+  return stornoId;
+}
+
+// ---------------------------------------------------------------------
 // Kassensturz (mit explizitem Anfangsbestand / Wechselgeld) - Pendant zu
 // repository.letzter_kassensturz / kassensturz_vorschau /
 // kassensturz_durchfuehren
@@ -270,4 +347,115 @@ export async function kassensturzDurchfuehren(
 export async function kassensturzHistorie(limit = 30) {
   const alle = await getAll("kassenstuerze");
   return alle.sort((a, b) => (a.datum < b.datum ? 1 : -1)).slice(0, limit);
+}
+
+// ---------------------------------------------------------------------
+// Kassenvorschlag (Trainingsplan + Heimspiele) - schlaegt anhand der
+// aktuellen Uhrzeit vor, welche Kasse vermutlich gerade gebraucht wird.
+// Schaltet NIE selbststaendig um, nur main.js zeigt anhand des
+// Rueckgabewerts einen Vorschlag mit Bestaetigen/Verwerfen-Knopf an - wer
+// kassiert, behaelt immer die Kontrolle. Trainingszeiten kommen aus einer
+// festen woechentlichen Struktur (siehe sync.js, reine Lesekopie).
+// Heimspiele werden von den Nutzer:innen selbst eingetragen, weil
+// fussball.de bewusst gegen automatisiertes Auslesen der Spieltermine
+// geschuetzt ist (verschleierte Mannschafts-/Datumsangaben im Daten-
+// Feed) - das haben wir nicht umgangen.
+// ---------------------------------------------------------------------
+
+function lokalesDatumIso(d) {
+  const jahr = d.getFullYear();
+  const monat = String(d.getMonth() + 1).padStart(2, "0");
+  const tag = String(d.getDate()).padStart(2, "0");
+  return `${jahr}-${monat}-${tag}`;
+}
+
+function zuMinuten(hhmm) {
+  const [h, m] = hhmm.split(":").map(Number);
+  return h * 60 + m;
+}
+
+// Heimspiel-Ende ohne Angabe: grob geschaetzt als Anstoss + 2 Stunden
+// (Spiel inkl. Nachspielzeit/Halbzeit plus etwas Kassenbetrieb danach).
+const HEIMSPIEL_STANDARDDAUER_MINUTEN = 120;
+
+export async function empfohleneKasse(jetztDatum = new Date()) {
+  const wochentagJs = jetztDatum.getDay(); // 0=So..6=Sa
+  const wochentag = wochentagJs === 0 ? 7 : wochentagJs; // 1=Mo..7=So
+  const minutenJetzt = jetztDatum.getHours() * 60 + jetztDatum.getMinutes();
+  const heute = lokalesDatumIso(jetztDatum);
+
+  // Heimspiele haben Vorrang vor Training: konkretes Einzelereignis statt
+  // wiederkehrender Regel.
+  const heimspiele = await getAll("heimspiele");
+  for (const spiel of heimspiele.filter((s) => s.datum === heute)) {
+    const start = zuMinuten(spiel.start_uhrzeit);
+    const ende = spiel.ende_uhrzeit ? zuMinuten(spiel.ende_uhrzeit) : start + HEIMSPIEL_STANDARDDAUER_MINUTEN;
+    if (minutenJetzt >= start && minutenJetzt <= ende) {
+      return {
+        kasse: spiel.kasse,
+        grund: `Heimspiel ${spiel.team}${spiel.gegner ? " vs. " + spiel.gegner : ""}`,
+        schluessel: `heimspiel:${spiel.id}`,
+      };
+    }
+  }
+
+  const trainingszeiten = await getAll("trainingszeiten");
+  for (const training of trainingszeiten.filter((t) => t.aktiv && t.wochentag === wochentag)) {
+    const start = zuMinuten(training.start_uhrzeit);
+    const ende = zuMinuten(training.ende_uhrzeit);
+    if (minutenJetzt >= start && minutenJetzt <= ende) {
+      return {
+        kasse: training.kasse,
+        grund: `Training ${training.team}`,
+        schluessel: `training:${training.id}`,
+      };
+    }
+  }
+
+  return null;
+}
+
+export async function listeTrainingszeiten() {
+  const alle = await getAll("trainingszeiten");
+  return alle
+    .filter((t) => t.aktiv)
+    .sort((a, b) => a.wochentag - b.wochentag || a.start_uhrzeit.localeCompare(b.start_uhrzeit));
+}
+
+export async function heimspielEintragen(team, kasse, datum, startUhrzeit, endeUhrzeit, gegner, kommentar, benutzerName) {
+  if (!team || !kasse || !datum || !startUhrzeit) {
+    throw new Error("Team, Datum und Anstoßzeit sind erforderlich.");
+  }
+  const id = neueId();
+  const gid = await geraetId();
+  await put("heimspiele", {
+    id,
+    team,
+    kasse,
+    datum,
+    start_uhrzeit: startUhrzeit,
+    ende_uhrzeit: endeUhrzeit || null,
+    gegner: gegner || null,
+    kommentar: kommentar || null,
+    erstellt_am: jetzt(),
+    erstellt_von: benutzerName,
+    rechner: GERAET_NAME,
+    geraet_id: gid,
+    synced: false,
+    synced_at: null,
+  });
+  return id;
+}
+
+export async function listeKommendeHeimspiele(anzahlTage = 30) {
+  const heute = new Date();
+  const heuteIso = lokalesDatumIso(heute);
+  const grenze = new Date(heute);
+  grenze.setDate(grenze.getDate() + anzahlTage);
+  const grenzeIso = lokalesDatumIso(grenze);
+
+  const alle = await getAll("heimspiele");
+  return alle
+    .filter((s) => s.datum >= heuteIso && s.datum <= grenzeIso)
+    .sort((a, b) => (a.datum + a.start_uhrzeit).localeCompare(b.datum + b.start_uhrzeit));
 }

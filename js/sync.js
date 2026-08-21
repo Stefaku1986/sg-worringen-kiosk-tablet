@@ -5,15 +5,15 @@
 //   1. Push: alle lokal noch nicht synchronisierten Datensaetze der
 //      schreibbaren Tabellen werden per Upsert (nach id) hochgeladen.
 //   2. Pull: anschliessend werden die reinen Lesekopien (Produkte,
-//      Benutzer, Schiedsrichter-Auszahlungen) komplett neu heruntergeladen,
-//      und alle schreibbaren Tabellen ebenfalls neu geholt (inkl.
-//      Aenderungen anderer Geraete/Rechner).
+//      Benutzer, Trainingszeiten) komplett neu heruntergeladen, und alle
+//      schreibbaren Tabellen ebenfalls neu geholt (inkl. Aenderungen
+//      anderer Geraete/Rechner).
 //
-// Kassiervorgaenge/Positionen/Lagerbewegungen/Kassenstuerze sind rein
-// anfuegende (append-only) Datensaetze - es kann daher zu keinen
-// Merge-Konflikten kommen. Ohne Internet schlaegt der Versuch einfach fehl
-// und wird beim naechsten Mal wiederholt; das Kassieren selbst ist davon
-// nie betroffen.
+// Kassiervorgaenge/Positionen/Lagerbewegungen/Kassenstuerze/
+// Schiedsrichter-Auszahlungen/Heimspiele sind rein anfuegende
+// (append-only) Datensaetze - es kann daher zu keinen Merge-Konflikten
+// kommen. Ohne Internet schlaegt der Versuch einfach fehl und wird beim
+// naechsten Mal wiederholt; das Kassieren selbst ist davon nie betroffen.
 
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from "./config.js";
 import { getAll, putAll, ersetzeAlle } from "./db.js";
@@ -27,14 +27,22 @@ import { getAll, putAll, ersetzeAlle } from "./db.js";
 // offline - nur der eigentliche Sync-Versuch schlaegt dann fehl (und wird
 // unten sauber abgefangen).
 
-const NUR_LESEN_TABELLEN = ["produkte", "benutzer", "schiedsrichter_auszahlungen"];
-const SCHREIBBARE_TABELLEN = ["kassiervorgaenge", "positionen", "lagerbewegungen", "kassenstuerze"];
+const NUR_LESEN_TABELLEN = ["produkte", "benutzer", "trainingszeiten"];
+const SCHREIBBARE_TABELLEN = [
+  "kassiervorgaenge",
+  "positionen",
+  "lagerbewegungen",
+  "kassenstuerze",
+  "schiedsrichter_auszahlungen",
+  "heimspiele",
+];
 const ALLE_TABELLEN = [...NUR_LESEN_TABELLEN, ...SCHREIBBARE_TABELLEN];
 
 // Spalten, die lokal als 0/1 (SQLite-Konvention, siehe kiosk/db.py) bzw.
 // hier als JS-Boolean gefuehrt werden, remote aber als echtes boolean.
 const BOOL_SPALTEN = {
   produkte: ["aktiv"],
+  trainingszeiten: ["aktiv"],
   positionen: ["ist_helferpreis"],
   benutzer: ["ist_admin", "aktiv"],
 };

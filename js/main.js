@@ -3,7 +3,7 @@
 // Schritt: einfaches DOM-Handling, wie es fuer eine kleine Kiosk-App
 // voellig ausreicht.
 
-import { SYNC_INTERVAL_SECONDS } from "./config.js";
+import { SYNC_INTERVAL_SECONDS, TEAMS } from "./config.js";
 import { euro, deZahl } from "./format.js";
 import * as repo from "./repo.js";
 import * as session from "./session.js";
@@ -19,17 +19,28 @@ const kasseAuswahlBereich = el("kasse-auswahl-bereich");
 const kasseAuswahl = el("kasse-auswahl");
 const syncStatusEl = el("sync-status");
 const syncJetztBtn = el("sync-jetzt-btn");
+const updateStatusEl = el("update-status");
+const updatePruefenBtn = el("update-pruefen-btn");
 const benutzerLabel = el("benutzer-label");
 const abmeldenBtn = el("abmelden-btn");
 const tabsEl = el("tabs");
 const tabVerkauf = el("tab-verkauf");
 const tabStorno = el("tab-storno");
 const tabKassensturz = el("tab-kassensturz");
+const tabSchiedsrichter = el("tab-schiedsrichter");
+const tabTermine = el("tab-termine");
+
+const kassenvorschlagBanner = el("kassenvorschlag-banner");
+const kassenvorschlagText = el("kassenvorschlag-text");
+const kassenvorschlagUebernehmenBtn = el("kassenvorschlag-uebernehmen-btn");
+const kassenvorschlagVerwerfenBtn = el("kassenvorschlag-verwerfen-btn");
 
 const loginView = el("login-view");
 const verkaufView = el("verkauf-view");
 const stornoView = el("storno-view");
 const kassensturzView = el("kassensturz-view");
+const schiedsrichterView = el("schiedsrichter-view");
+const termineView = el("termine-view");
 
 const loginNutzerauswahl = el("login-nutzerauswahl");
 const nutzerGrid = el("nutzer-grid");
@@ -60,6 +71,25 @@ const ksNaechsterStartFeld = el("ks-naechster-start-feld");
 const ksSpeichernBtn = el("ks-speichern-btn");
 const ksHistorieBody = document.querySelector("#ks-historie-tabelle tbody");
 
+const srKasseName = el("sr-kasse-name");
+const srMannschaftFeld = el("sr-mannschaft-feld");
+const srNameFeld = el("sr-name-feld");
+const srBetragFeld = el("sr-betrag-feld");
+const srKommentarFeld = el("sr-kommentar-feld");
+const srFehler = el("sr-fehler");
+const srAuszahlenBtn = el("sr-auszahlen-btn");
+const srTabelleBody = document.querySelector("#sr-tabelle tbody");
+
+const tsTeamAuswahl = el("ts-team-auswahl");
+const tsDatumFeld = el("ts-datum-feld");
+const tsStartFeld = el("ts-start-feld");
+const tsEndeFeld = el("ts-ende-feld");
+const tsGegnerFeld = el("ts-gegner-feld");
+const tsFehler = el("ts-fehler");
+const tsEintragenBtn = el("ts-eintragen-btn");
+const tsHeimspieleBody = document.querySelector("#ts-heimspiele-tabelle tbody");
+const tsTrainingsplanBody = document.querySelector("#ts-trainingsplan-tabelle tbody");
+
 const bezahlenOverlay = el("bezahlen-overlay");
 const bezahlenSumme = el("bezahlen-summe");
 const gegebenFeld = el("gegeben-feld");
@@ -74,6 +104,7 @@ const hinweisAktionen = el("hinweis-aktionen");
 
 const KATEGORIE_LABEL = { Getraenk: "Getränke", Speise: "Speisen" };
 const KASSE_LABEL = { Jugend: "Jugendkasse", Senioren: "Seniorenkasse" };
+const WOCHENTAG_LABEL = { 1: "Montag", 2: "Dienstag", 3: "Mittwoch", 4: "Donnerstag", 5: "Freitag", 6: "Samstag", 7: "Sonntag" };
 
 // ---------------------------------------------------------------------
 // Zustand
@@ -85,9 +116,10 @@ let warenkorb = []; // {produktId, name, menge, einzelpreis, einkaufspreis, mwst
 let helferpreisAktiv = false;
 let angemeldeterKandidat = null; // Benutzer, dessen PIN gerade eingegeben wird
 let pinEingabe = "";
-let aktuelleAnsicht = "login"; // 'login' | 'verkauf' | 'storno' | 'kassensturz'
+let aktuelleAnsicht = "login"; // 'login' | 'verkauf' | 'storno' | 'kassensturz' | 'schiedsrichter' | 'termine'
 let letzterKassensturzSoll = 0;
 let vorgaengeCache = []; // fuer Storno-Ansicht
+let abgelehnteKassenvorschlaege = new Set(); // "schluessel" bereits verworfener Vorschlaege
 
 // ---------------------------------------------------------------------
 // Hinweis-/Bestaetigungs-Dialog
@@ -149,6 +181,9 @@ function zeigeHauptView(name) {
     verkaufView.style.display = "none";
     stornoView.style.display = "none";
     kassensturzView.style.display = "none";
+    schiedsrichterView.style.display = "none";
+    termineView.style.display = "none";
+    kassenvorschlagBanner.classList.add("versteckt");
     tabsEl.style.display = "none";
     kasseAuswahlBereich.style.display = "none";
     benutzerLabel.style.display = "none";
@@ -168,14 +203,20 @@ function zeigeHauptView(name) {
   verkaufView.style.display = name === "verkauf" ? "flex" : "none";
   stornoView.style.display = name === "storno" ? "" : "none";
   kassensturzView.style.display = name === "kassensturz" ? "" : "none";
+  schiedsrichterView.style.display = name === "schiedsrichter" ? "" : "none";
+  termineView.style.display = name === "termine" ? "" : "none";
 
   tabVerkauf.classList.toggle("aktiv", name === "verkauf");
   tabStorno.classList.toggle("aktiv", name === "storno");
   tabKassensturz.classList.toggle("aktiv", name === "kassensturz");
+  tabSchiedsrichter.classList.toggle("aktiv", name === "schiedsrichter");
+  tabTermine.classList.toggle("aktiv", name === "termine");
 
   if (name === "verkauf") renderProduktGrid();
   if (name === "storno") renderStornoListe();
   if (name === "kassensturz") renderKassensturz();
+  if (name === "schiedsrichter") renderSchiedsrichter();
+  if (name === "termine") renderTermine();
 }
 
 // ---------------------------------------------------------------------
@@ -265,7 +306,9 @@ function nachAnmeldungAnzeigen() {
   kasseAuswahl.value = session.getAktiveKasse();
   warenkorb = [];
   helferpreisAktiv = false;
+  abgelehnteKassenvorschlaege = new Set();
   zeigeHauptView("verkauf");
+  pruefeKassenvorschlag();
 }
 
 function abmelden() {
@@ -610,6 +653,225 @@ async function renderKassensturzHistorie(aktiveKasse) {
 }
 
 // ---------------------------------------------------------------------
+// Schiedsrichter-Auszahlungen
+// ---------------------------------------------------------------------
+
+async function renderSchiedsrichter() {
+  const aktiveKasse = session.getAktiveKasse();
+  srKasseName.textContent = KASSE_LABEL[aktiveKasse] ?? aktiveKasse;
+  srFehler.textContent = "";
+
+  const alle = await repo.letzteSchiedsrichterAuszahlungen(500);
+  const stornierteIds = new Set(alle.filter((a) => a.storno_von).map((a) => a.storno_von));
+  const anzeige = alle.filter((a) => a.veranstaltung === aktiveKasse).slice(0, 50);
+
+  srTabelleBody.innerHTML = "";
+  for (const auszahlung of anzeige) {
+    const tr = document.createElement("tr");
+    let status = "Aktiv";
+    if (auszahlung.storno_von) status = "Storno";
+    else if (stornierteIds.has(auszahlung.id)) status = "Storniert";
+    if (status !== "Aktiv") tr.classList.add("storniert");
+
+    const zellen = [
+      formatDatumUhrzeit(auszahlung.datum),
+      auszahlung.mannschaft || "–",
+      auszahlung.schiedsrichter_name || "–",
+      euro(auszahlung.betrag, true),
+      status,
+    ];
+    for (const wert of zellen) {
+      const td = document.createElement("td");
+      td.textContent = wert;
+      tr.appendChild(td);
+    }
+
+    const tdAktion = document.createElement("td");
+    if (status === "Aktiv") {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "btn";
+      btn.textContent = "Stornieren";
+      btn.onclick = async () => {
+        const ok = await zeigeBestaetigung(
+          "Auszahlung stornieren?",
+          `Die Auszahlung vom ${formatDatumUhrzeit(auszahlung.datum)} über ${euro(auszahlung.betrag)} wird storniert. Das kann nicht rückgängig gemacht werden.`,
+          "Stornieren"
+        );
+        if (!ok) return;
+        const benutzer = session.getAktuellerBenutzer();
+        try {
+          await repo.schiedsrichterAuszahlungStornieren(auszahlung.id, benutzer.name);
+        } catch (exc) {
+          zeigeHinweis("Fehler beim Stornieren", exc.message ?? String(exc));
+          return;
+        }
+        renderSchiedsrichter();
+      };
+      tdAktion.appendChild(btn);
+    }
+    tr.appendChild(tdAktion);
+    srTabelleBody.appendChild(tr);
+  }
+}
+
+async function schiedsrichterAuszahlen() {
+  const betrag = parseFloat(srBetragFeld.value);
+  if (isNaN(betrag) || betrag <= 0) {
+    srFehler.textContent = "Bitte einen gültigen Betrag größer als 0 eingeben.";
+    return;
+  }
+  const benutzer = session.getAktuellerBenutzer();
+  try {
+    await repo.schiedsrichterAuszahlungErfassen(
+      session.getAktiveKasse(),
+      betrag,
+      srMannschaftFeld.value.trim(),
+      srNameFeld.value.trim(),
+      srKommentarFeld.value.trim(),
+      benutzer.name
+    );
+  } catch (exc) {
+    srFehler.textContent = exc.message ?? String(exc);
+    return;
+  }
+  srMannschaftFeld.value = "";
+  srNameFeld.value = "";
+  srBetragFeld.value = "";
+  srKommentarFeld.value = "";
+  srFehler.textContent = "";
+  renderSchiedsrichter();
+}
+
+// ---------------------------------------------------------------------
+// Termine (Heimspiele eintragen + Trainingsplan anzeigen)
+// ---------------------------------------------------------------------
+
+function fuelleTeamAuswahl() {
+  tsTeamAuswahl.innerHTML = "";
+  for (const eintrag of TEAMS) {
+    const option = document.createElement("option");
+    option.value = eintrag.team;
+    option.dataset.kasse = eintrag.kasse;
+    option.textContent = `${eintrag.team} (${KASSE_LABEL[eintrag.kasse]})`;
+    tsTeamAuswahl.appendChild(option);
+  }
+}
+
+async function renderTermine() {
+  tsFehler.textContent = "";
+
+  const heimspiele = await repo.listeKommendeHeimspiele(60);
+  tsHeimspieleBody.innerHTML = "";
+  for (const spiel of heimspiele) {
+    const tr = document.createElement("tr");
+    const zellen = [
+      spiel.datum.split("-").reverse().join("."),
+      spiel.start_uhrzeit,
+      spiel.team,
+      KASSE_LABEL[spiel.kasse] ?? spiel.kasse,
+      spiel.gegner || "–",
+    ];
+    for (const wert of zellen) {
+      const td = document.createElement("td");
+      td.textContent = wert;
+      tr.appendChild(td);
+    }
+    tsHeimspieleBody.appendChild(tr);
+  }
+
+  const trainingszeiten = await repo.listeTrainingszeiten();
+  tsTrainingsplanBody.innerHTML = "";
+  for (const training of trainingszeiten) {
+    const tr = document.createElement("tr");
+    const zellen = [
+      WOCHENTAG_LABEL[training.wochentag] ?? training.wochentag,
+      `${training.start_uhrzeit}–${training.ende_uhrzeit}`,
+      training.team,
+      KASSE_LABEL[training.kasse] ?? training.kasse,
+    ];
+    for (const wert of zellen) {
+      const td = document.createElement("td");
+      td.textContent = wert;
+      tr.appendChild(td);
+    }
+    tsTrainingsplanBody.appendChild(tr);
+  }
+}
+
+async function heimspielEintragen() {
+  const option = tsTeamAuswahl.selectedOptions[0];
+  if (!option || !tsDatumFeld.value || !tsStartFeld.value) {
+    tsFehler.textContent = "Bitte Team, Datum und Anstoßzeit angeben.";
+    return;
+  }
+  const benutzer = session.getAktuellerBenutzer();
+  try {
+    await repo.heimspielEintragen(
+      option.value,
+      option.dataset.kasse,
+      tsDatumFeld.value,
+      tsStartFeld.value,
+      tsEndeFeld.value || null,
+      tsGegnerFeld.value.trim(),
+      null,
+      benutzer.name
+    );
+  } catch (exc) {
+    tsFehler.textContent = exc.message ?? String(exc);
+    return;
+  }
+  tsDatumFeld.value = "";
+  tsStartFeld.value = "";
+  tsEndeFeld.value = "";
+  tsGegnerFeld.value = "";
+  tsFehler.textContent = "";
+  renderTermine();
+  pruefeKassenvorschlag();
+}
+
+// ---------------------------------------------------------------------
+// Kassenvorschlag - schlaegt anhand von Trainingsplan/Heimspielen die
+// vermutlich richtige Kasse vor, schaltet aber NIE selbststaendig um
+// (siehe repo.empfohleneKasse). Wird beim Anmelden sowie periodisch
+// waehrend der Nutzung erneut geprueft, damit auch ein Wechsel mitten in
+// der Anmeldung (z.B. Anstoss) zeitnah bemerkt wird.
+// ---------------------------------------------------------------------
+
+async function pruefeKassenvorschlag() {
+  if (!session.istAngemeldet()) return;
+  const vorschlag = await repo.empfohleneKasse();
+  if (!vorschlag || vorschlag.kasse === session.getAktiveKasse() || abgelehnteKassenvorschlaege.has(vorschlag.schluessel)) {
+    kassenvorschlagBanner.classList.add("versteckt");
+    return;
+  }
+  kassenvorschlagText.textContent = `Jetzt vermutlich: ${KASSE_LABEL[vorschlag.kasse] ?? vorschlag.kasse} (${vorschlag.grund}) – übernehmen?`;
+  kassenvorschlagBanner.dataset.kasse = vorschlag.kasse;
+  kassenvorschlagBanner.dataset.schluessel = vorschlag.schluessel;
+  kassenvorschlagBanner.classList.remove("versteckt");
+}
+
+function kassenvorschlagUebernehmen() {
+  const kasse = kassenvorschlagBanner.dataset.kasse;
+  session.setAktiveKasse(kasse);
+  kasseAuswahl.value = kasse;
+  kassenvorschlagBanner.classList.add("versteckt");
+  aktualisiereAktuelleAnsichtNachKassenwechsel();
+}
+
+function kassenvorschlagVerwerfen() {
+  abgelehnteKassenvorschlaege.add(kassenvorschlagBanner.dataset.schluessel);
+  kassenvorschlagBanner.classList.add("versteckt");
+}
+
+function aktualisiereAktuelleAnsichtNachKassenwechsel() {
+  if (aktuelleAnsicht === "verkauf") renderProduktGrid();
+  if (aktuelleAnsicht === "storno") renderStornoListe();
+  if (aktuelleAnsicht === "kassensturz") renderKassensturz();
+  if (aktuelleAnsicht === "schiedsrichter") renderSchiedsrichter();
+}
+
+// ---------------------------------------------------------------------
 // Hilfsfunktionen
 // ---------------------------------------------------------------------
 
@@ -654,7 +916,12 @@ async function nachSyncAktualisieren() {
     renderStornoListe();
   } else if (aktuelleAnsicht === "kassensturz") {
     renderKassensturz();
+  } else if (aktuelleAnsicht === "schiedsrichter") {
+    renderSchiedsrichter();
+  } else if (aktuelleAnsicht === "termine") {
+    renderTermine();
   }
+  pruefeKassenvorschlag();
 }
 
 // ---------------------------------------------------------------------
@@ -684,17 +951,24 @@ function wireEvents() {
   pinZurueckBtn.onclick = pinEingabeVerlassen;
   abmeldenBtn.onclick = abmelden;
   syncJetztBtn.onclick = syncManuellAusloesen;
+  updatePruefenBtn.onclick = updateButtonGeklickt;
 
   kasseAuswahl.onchange = () => {
     session.setAktiveKasse(kasseAuswahl.value);
-    if (aktuelleAnsicht === "verkauf") renderProduktGrid();
-    if (aktuelleAnsicht === "storno") renderStornoListe();
-    if (aktuelleAnsicht === "kassensturz") renderKassensturz();
+    aktualisiereAktuelleAnsichtNachKassenwechsel();
+    pruefeKassenvorschlag();
   };
 
   tabVerkauf.onclick = () => zeigeHauptView("verkauf");
   tabStorno.onclick = () => zeigeHauptView("storno");
   tabKassensturz.onclick = () => zeigeHauptView("kassensturz");
+  tabSchiedsrichter.onclick = () => zeigeHauptView("schiedsrichter");
+  tabTermine.onclick = () => zeigeHauptView("termine");
+  srAuszahlenBtn.onclick = schiedsrichterAuszahlen;
+  tsEintragenBtn.onclick = heimspielEintragen;
+
+  kassenvorschlagUebernehmenBtn.onclick = kassenvorschlagUebernehmen;
+  kassenvorschlagVerwerfenBtn.onclick = kassenvorschlagVerwerfen;
 
   helferpreisBtn.onclick = () => {
     helferpreisAktiv = !helferpreisAktiv;
@@ -721,18 +995,104 @@ function wireEvents() {
 // Start
 // ---------------------------------------------------------------------
 
+// ---------------------------------------------------------------------
+// Updates (Service Worker)
+// ---------------------------------------------------------------------
+// Der Service Worker cacht die App-Shell fuers Offline-Arbeiten (siehe
+// service-worker.js). Damit auf dem Tablet auch tatsaechlich sichtbar
+// ist, ob/wann eine neue Version vorliegt, merken wir uns die
+// Registrierung, bieten eine manuelle Pruefung per Knopf an, und
+// zeigen an, wenn eine neue Version installiert wurde - statt sie
+// einfach mitten in der Nutzung "unter dem Cursor" auszutauschen,
+// muss die Kassiererin/der Kassierer bewusst auf "Neu laden" tippen
+// (gleiches Grundprinzip wie beim Kassenvorschlag: vorschlagen statt
+// automatisch handeln).
+
+let serviceWorkerRegistration = null;
+let updateBereitZumLaden = false;
+
 function serviceWorkerRegistrieren() {
-  if (!("serviceWorker" in navigator)) return;
+  if (!("serviceWorker" in navigator)) {
+    updateStatusEl.textContent = "Updates auf diesem Gerät nicht unterstützt";
+    updatePruefenBtn.disabled = true;
+    return;
+  }
   // Nicht blockierend - falls das fehlschlaegt (z.B. beim allerersten
   // Aufruf ohne Internet), funktioniert die Seite trotzdem ganz normal,
   // nur eben ohne die zusaetzliche Offline-Absicherung durch den Cache.
-  navigator.serviceWorker.register("service-worker.js").catch(() => {});
+  navigator.serviceWorker
+    .register("service-worker.js")
+    .then((reg) => {
+      serviceWorkerRegistration = reg;
+      reg.addEventListener("updatefound", () => {
+        const neuerWorker = reg.installing;
+        if (!neuerWorker) return;
+        neuerWorker.addEventListener("statechange", () => {
+          if (neuerWorker.state === "installed" && navigator.serviceWorker.controller) {
+            updateAlsBereitAnzeigen();
+          }
+        });
+      });
+    })
+    .catch(() => {
+      updateStatusEl.textContent = "Updates momentan nicht verfügbar";
+    });
 }
+
+function updateAlsBereitAnzeigen() {
+  updateBereitZumLaden = true;
+  updateStatusEl.textContent = "Neue Version installiert";
+  updatePruefenBtn.textContent = "Update verfügbar – Neu laden";
+  updatePruefenBtn.classList.add("btn-update-verfuegbar");
+  updatePruefenBtn.disabled = false;
+}
+
+function updateButtonGeklickt() {
+  if (updateBereitZumLaden) {
+    window.location.reload();
+    return;
+  }
+  updatePruefen();
+}
+
+async function updatePruefen() {
+  if (!serviceWorkerRegistration) {
+    zeigeHinweis(
+      "Updates",
+      "Auf diesem Gerät konnte kein Service Worker registriert werden – eine Update-Prüfung ist daher nicht möglich. Bitte die Seite manuell neu laden."
+    );
+    return;
+  }
+  updatePruefenBtn.disabled = true;
+  updateStatusEl.textContent = "Prüfe auf Updates…";
+  try {
+    // registration.update() erzwingt einen Byte-Vergleich der
+    // service-worker.js mit der Version auf dem Server (umgeht dabei
+    // laut Spezifikation den HTTP-Cache) - genau das manuelle
+    // "nach Updates suchen", das bisher komplett gefehlt hat.
+    await serviceWorkerRegistration.update();
+    setTimeout(() => {
+      if (!updateBereitZumLaden) {
+        updateStatusEl.textContent = `Aktuell (geprüft ${formatUhrzeit(new Date().toISOString())})`;
+      }
+    }, 1500);
+  } catch (e) {
+    updateStatusEl.textContent = "Update-Prüfung fehlgeschlagen – ist Internet verfügbar?";
+  }
+  if (!updateBereitZumLaden) updatePruefenBtn.disabled = false;
+}
+
+// Wie oft waehrend der laufenden Nutzung erneut geprueft wird, ob sich
+// die vermutlich richtige Kasse geaendert hat (z.B. weil ein Training
+// oder Heimspiel gerade angefangen hat). Bewusst kein Vollautomatik-
+// Wechsel, siehe pruefeKassenvorschlag().
+const KASSENVORSCHLAG_INTERVALL_MS = 2 * 60 * 1000;
 
 async function init() {
   serviceWorkerRegistrieren();
   wireEvents();
   renderTastatur();
+  fuelleTeamAuswahl();
 
   await ladeCaches();
   renderLoginNutzer();
@@ -745,6 +1105,7 @@ async function init() {
 
   syncManuellAusloesen();
   syncAutomatikStarten(SYNC_INTERVAL_SECONDS);
+  setInterval(pruefeKassenvorschlag, KASSENVORSCHLAG_INTERVALL_MS);
 }
 
 init();

@@ -18,3 +18,20 @@ export const SYNC_INTERVAL_SECONDS = 60;
 // zu RECHNER_NAME in kiosk/config.py). Es gibt auf einem Tablet keinen
 // verlaesslichen Hostnamen - deshalb ein fester, gut erkennbarer Name.
 export const GERAET_NAME = "Tablet";
+
+// Mannschaften des Vereins mit Zuordnung zur jeweiligen Kasse, fuer die
+// Team-Auswahl beim Eintragen eines Heimspiels (siehe "Termine"-Ansicht).
+// Stand: Trainingsplan der Vereins-Website, Sommerfahrplan 2026/2027.
+export const TEAMS = [
+  { team: "U5", kasse: "Jugend" },
+  { team: "U6", kasse: "Jugend" },
+  { team: "U7", kasse: "Jugend" },
+  { team: "U8", kasse: "Jugend" },
+  { team: "U9", kasse: "Jugend" },
+  { team: "U10", kasse: "Jugend" },
+  { team: "U12", kasse: "Jugend" },
+  { team: "U14", kasse: "Jugend" },
+  { team: "U16", kasse: "Jugend" },
+  { team: "1. Mannschaft", kasse: "Senioren" },
+  { team: "Alte Herren", kasse: "Senioren" },
+];

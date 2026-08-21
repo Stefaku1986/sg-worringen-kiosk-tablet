@@ -1,16 +1,22 @@
 // Lokaler Offline-Speicher (IndexedDB) - Pendant zu kiosk/db.py.
 //
 // Jedes Tablet hat seinen eigenen lokalen Speicher, der komplett ohne
-// Internet funktioniert. Die Tabellen "produkte", "benutzer" und
-// "schiedsrichter_auszahlungen" sind reine Lesekopien (werden nur
-// heruntergeladen, nie von hier aus veraendert - Produktverwaltung,
-// Benutzerverwaltung und Schiedsrichter-Auszahlungen bleiben Aufgaben der
-// Windows-App). Die uebrigen Tabellen sind schreibbar und werden per
-// sync.js mit der zentralen Supabase-Datenbank abgeglichen (gleiches
+// Internet funktioniert. Die Tabellen "produkte" und "benutzer" sind
+// reine Lesekopien (werden nur heruntergeladen, nie von hier aus
+// veraendert - Produktverwaltung und Benutzerverwaltung bleiben Aufgaben
+// der Windows-App). Die uebrigen Tabellen (inkl. der
+// Schiedsrichter-Auszahlungen, die auf dem Tablet ebenfalls erfasst
+// werden koennen) sind schreibbar und werden per sync.js mit der
+// zentralen Supabase-Datenbank abgeglichen (gleiches
 // Push-dann-Pull-Prinzip wie kiosk/sync.py).
 
 const DB_NAME = "sg-worringen-kiosk-tablet";
-const DB_VERSION = 1;
+// Version 2 (seit Kassenvorschlag-Funktion): neue Stores "trainingszeiten"
+// und "heimspiele" hinzugefuegt. Ein IndexedDB-"onupgradeneeded" laeuft nur
+// beim Erstoeffnen ODER bei einer hoeheren Versionsnummer als zuvor -
+// deshalb muss diese Zahl bei jedem neuen Store erhoeht werden, sonst
+// bleiben bereits installierte Tablets bei den alten Stores haengen.
+const DB_VERSION = 2;
 
 // Bewusst ohne zusaetzliche Indizes: bei den ueberschaubaren Datenmengen
 // eines Vereins-Kiosks ist ein einfaches getAll() + Filtern in JavaScript
@@ -24,6 +30,8 @@ const STORES = {
   positionen: { keyPath: "id" },
   lagerbewegungen: { keyPath: "id" },
   kassenstuerze: { keyPath: "id" },
+  trainingszeiten: { keyPath: "id" },
+  heimspiele: { keyPath: "id" },
   meta: { keyPath: "schluessel" },
 };
 

@@ -27,7 +27,9 @@
       <div class="spacer"></div>
 
       <span id="sync-status" class="sync-status">Noch nicht synchronisiert</span>
-      <button id="sync-jetzt-btn" class="btn" style="display:none;">Sync</button>
+      <button id="sync-jetzt-btn" class="btn">Sync</button>
+      <span id="update-status" class="sync-status"></span>
+      <button id="update-pruefen-btn" class="btn">Nach Updates suchen</button>
       <span id="benutzer-label" style="display:none; font-weight:700;"></span>
       <button id="abmelden-btn" class="btn" style="display:none;">Abmelden</button>
     </header>
@@ -36,7 +38,17 @@
       <button id="tab-verkauf" class="aktiv">Verkauf</button>
       <button id="tab-storno">Stornieren</button>
       <button id="tab-kassensturz">Kassensturz</button>
+      <button id="tab-schiedsrichter">Schiedsrichter</button>
+      <button id="tab-termine">Termine</button>
     </nav>
+
+    <div id="kassenvorschlag-banner" class="kassenvorschlag-banner versteckt">
+      <span id="kassenvorschlag-text"></span>
+      <div class="kassenvorschlag-aktionen">
+        <button id="kassenvorschlag-verwerfen-btn" class="btn">Nicht jetzt</button>
+        <button id="kassenvorschlag-uebernehmen-btn" class="btn btn-primaer">Übernehmen</button>
+      </div>
+    </div>
 
     <main id="ansicht">
       <!-- Login -->
@@ -108,6 +120,77 @@
           <table class="liste" id="ks-historie-tabelle">
             <thead>
               <tr><th>Datum</th><th>Kasse</th><th>Soll</th><th>Gezählt</th><th>Differenz</th></tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Schiedsrichter-Auszahlungen -->
+      <section id="schiedsrichter-view" style="display:none;">
+        <div class="karte" style="max-width:480px;">
+          <h2 style="margin-top:0; color:var(--blau-dunkel);">Schiedsrichter-Auszahlung – <span id="sr-kasse-name"></span></h2>
+          <label><b>Mannschaft (optional):</b></label>
+          <input type="text" class="betrag" id="sr-mannschaft-feld" placeholder="z.B. U12" />
+          <label><b>Schiedsrichter (optional):</b></label>
+          <input type="text" class="betrag" id="sr-name-feld" placeholder="Name" />
+          <label><b>Betrag:</b></label>
+          <input type="number" inputmode="decimal" step="0.01" class="betrag" id="sr-betrag-feld" />
+          <label><b>Kommentar (optional):</b></label>
+          <input type="text" class="betrag" id="sr-kommentar-feld" />
+          <div id="sr-fehler" class="pin-fehler"></div>
+          <button id="sr-auszahlen-btn" class="btn btn-primaer" style="width:100%;">Auszahlen</button>
+        </div>
+
+        <div class="karte">
+          <h2 style="margin-top:0; color:var(--blau-dunkel);">Letzte Auszahlungen</h2>
+          <table class="liste" id="sr-tabelle">
+            <thead>
+              <tr><th>Datum</th><th>Mannschaft</th><th>Schiedsrichter</th><th>Betrag</th><th>Status</th><th></th></tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Termine (Heimspiele + Trainingsplan, fuer den Kassenvorschlag) -->
+      <section id="termine-view" style="display:none;">
+        <div class="karte" style="max-width:480px;">
+          <h2 style="margin-top:0; color:var(--blau-dunkel);">Heimspiel eintragen</h2>
+          <p class="hinweis">
+            Spieltermine können nicht automatisch von fussball.de geladen werden
+            (bewusst gegen automatisches Auslesen geschützt) – bitte Heimspiele
+            hier kurz eintragen, damit die Kasse zur richtigen Zeit vorgeschlagen wird.
+          </p>
+          <label><b>Team:</b></label>
+          <select class="betrag" id="ts-team-auswahl"></select>
+          <label><b>Datum:</b></label>
+          <input type="date" class="betrag" id="ts-datum-feld" />
+          <label><b>Anstoß:</b></label>
+          <input type="time" class="betrag" id="ts-start-feld" />
+          <label><b>Ende (optional, sonst Anstoß + 2 Std.):</b></label>
+          <input type="time" class="betrag" id="ts-ende-feld" />
+          <label><b>Gegner (optional):</b></label>
+          <input type="text" class="betrag" id="ts-gegner-feld" />
+          <div id="ts-fehler" class="pin-fehler"></div>
+          <button id="ts-eintragen-btn" class="btn btn-primaer" style="width:100%;">Heimspiel eintragen</button>
+        </div>
+
+        <div class="karte">
+          <h2 style="margin-top:0; color:var(--blau-dunkel);">Kommende Heimspiele</h2>
+          <table class="liste" id="ts-heimspiele-tabelle">
+            <thead>
+              <tr><th>Datum</th><th>Anstoß</th><th>Team</th><th>Kasse</th><th>Gegner</th></tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+
+        <div class="karte">
+          <h2 style="margin-top:0; color:var(--blau-dunkel);">Trainingsplan</h2>
+          <table class="liste" id="ts-trainingsplan-tabelle">
+            <thead>
+              <tr><th>Tag</th><th>Zeit</th><th>Team</th><th>Kasse</th></tr>
             </thead>
             <tbody></tbody>
           </table>
