@@ -10,10 +10,11 @@
 //      anderer Geraete/Rechner).
 //
 // Kassiervorgaenge/Positionen/Lagerbewegungen/Kassenstuerze/
-// Schiedsrichter-Auszahlungen/Heimspiele sind rein anfuegende
-// (append-only) Datensaetze - es kann daher zu keinen Merge-Konflikten
-// kommen. Ohne Internet schlaegt der Versuch einfach fehl und wird beim
-// naechsten Mal wiederholt; das Kassieren selbst ist davon nie betroffen.
+// Schiedsrichter-Auszahlungen/Bargeld-Einzahlungen/Heimspiele sind rein
+// anfuegende (append-only) Datensaetze - es kann daher zu keinen
+// Merge-Konflikten kommen. Ohne Internet schlaegt der Versuch einfach fehl
+// und wird beim naechsten Mal wiederholt; das Kassieren selbst ist davon
+// nie betroffen.
 
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from "./config.js";
 import { getAll, putAll, ersetzeAlle } from "./db.js";
@@ -34,6 +35,7 @@ const SCHREIBBARE_TABELLEN = [
   "lagerbewegungen",
   "kassenstuerze",
   "schiedsrichter_auszahlungen",
+  "bargeld_einzahlungen",
   "heimspiele",
 ];
 const ALLE_TABELLEN = [...NUR_LESEN_TABELLEN, ...SCHREIBBARE_TABELLEN];

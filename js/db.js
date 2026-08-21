@@ -11,12 +11,12 @@
 // Push-dann-Pull-Prinzip wie kiosk/sync.py).
 
 const DB_NAME = "sg-worringen-kiosk-tablet";
-// Version 2 (seit Kassenvorschlag-Funktion): neue Stores "trainingszeiten"
-// und "heimspiele" hinzugefuegt. Ein IndexedDB-"onupgradeneeded" laeuft nur
-// beim Erstoeffnen ODER bei einer hoeheren Versionsnummer als zuvor -
-// deshalb muss diese Zahl bei jedem neuen Store erhoeht werden, sonst
-// bleiben bereits installierte Tablets bei den alten Stores haengen.
-const DB_VERSION = 2;
+// Version 3 (seit "Bargeld einzahlen"-Funktion): neuer Store
+// "bargeld_einzahlungen" hinzugefuegt. Ein IndexedDB-"onupgradeneeded"
+// laeuft nur beim Erstoeffnen ODER bei einer hoeheren Versionsnummer als
+// zuvor - deshalb muss diese Zahl bei jedem neuen Store erhoeht werden,
+// sonst bleiben bereits installierte Tablets bei den alten Stores haengen.
+const DB_VERSION = 3;
 
 // Bewusst ohne zusaetzliche Indizes: bei den ueberschaubaren Datenmengen
 // eines Vereins-Kiosks ist ein einfaches getAll() + Filtern in JavaScript
@@ -26,6 +26,7 @@ const STORES = {
   produkte: { keyPath: "id" },
   benutzer: { keyPath: "id" },
   schiedsrichter_auszahlungen: { keyPath: "id" },
+  bargeld_einzahlungen: { keyPath: "id" },
   kassiervorgaenge: { keyPath: "id" },
   positionen: { keyPath: "id" },
   lagerbewegungen: { keyPath: "id" },

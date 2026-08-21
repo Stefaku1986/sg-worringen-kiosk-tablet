@@ -1,17 +1,18 @@
 // Geschaeftslogik der Tablet-Kasse - Pendant zu kiosk/repository.py,
 // beschraenkt auf das, was auf dem Tablet gebraucht wird: Verkauf +
 // automatischer Warenausgang, Storno, Kassensturz sowie
-// Schiedsrichter-Auszahlungen (erfassen + stornieren). Produktverwaltung,
-// Benutzerverwaltung, uebrige Warenwirtschaft (Wareneingang/Korrektur/
-// Inventur/Beleg-Scan), Auswertung/Monatsabrechnung und Drucken bleiben
-// bewusst der Windows-App vorbehalten - hier werden die dafuer noetigen
-// Tabellen nur mitgelesen (siehe sync.js).
+// Schiedsrichter-Auszahlungen und Bargeld-Einzahlungen (je erfassen +
+// stornieren). Produktverwaltung, Benutzerverwaltung, uebrige
+// Warenwirtschaft (Wareneingang/Korrektur/Inventur/Beleg-Scan),
+// Auswertung/Monatsabrechnung und Drucken bleiben bewusst der Windows-App
+// vorbehalten - hier werden die dafuer noetigen Tabellen nur mitgelesen
+// (siehe sync.js).
 //
 // Wie am Rechner sind Kassiervorgaenge, Positionen, Lagerbewegungen,
-// Kassenstuerze und Schiedsrichter-Auszahlungen unveraenderliche
-// Ereignisse: sie werden nur angelegt, nie nachtraeglich veraendert oder
-// geloescht. Ein Storno legt einen neuen, gegenlaeufigen Vorgang an statt
-// den Original-Vorgang zu veraendern.
+// Kassenstuerze, Schiedsrichter-Auszahlungen und Bargeld-Einzahlungen
+// unveraenderliche Ereignisse: sie werden nur angelegt, nie nachtraeglich
+// veraendert oder geloescht. Ein Storno legt einen neuen, gegenlaeufigen
+// Vorgang an statt den Original-Vorgang zu veraendern.
 
 import { getAll, get, put, geraetId, jetzt, neueId } from "./db.js";
 import { GERAET_NAME } from "./config.js";
@@ -269,6 +270,79 @@ export async function schiedsrichterAuszahlungStornieren(auszahlungId, benutzerN
 }
 
 // ---------------------------------------------------------------------
+// Bargeld-Einzahlungen - Pendant zu
+// repository.bargeld_einzahlung_erfassen / bargeld_einzahlung_stornieren.
+// Gegenstueck zu den Schiedsrichter-Auszahlungen oben: erhoeht statt
+// mindert das in der Kasse erwartete Bargeld (Kassensturz-Soll), z.B. fuer
+// Wechselgeld-Nachschub oder einen Vorschuss fuer den Wareneinkauf. Wie
+// dort ein unveraenderliches Ereignis - eine Korrektur erfolgt
+// ausschliesslich per Storno, nie durch Aendern/Loeschen.
+// ---------------------------------------------------------------------
+
+export async function bargeldEinzahlungErfassen(veranstaltung, betrag, kommentar, benutzerName) {
+  if (betrag == null || betrag <= 0) throw new Error("Betrag muss größer als 0 sein.");
+  const id = neueId();
+  const gid = await geraetId();
+  await put("bargeld_einzahlungen", {
+    id,
+    datum: jetzt(),
+    veranstaltung,
+    betrag: rund2(betrag),
+    kommentar: kommentar || null,
+    storno_von: null,
+    rechner: GERAET_NAME,
+    geraet_id: gid,
+    synced: false,
+    synced_at: null,
+    benutzer: benutzerName,
+  });
+  return id;
+}
+
+export async function letzteBargeldEinzahlungen(limit = 30) {
+  const alle = await getAll("bargeld_einzahlungen");
+  return alle.sort((a, b) => (a.datum < b.datum ? 1 : -1)).slice(0, limit);
+}
+
+export async function bargeldEinzahlungIstStorniert(einzahlungId) {
+  const alle = await getAll("bargeld_einzahlungen");
+  return alle.some((e) => e.storno_von === einzahlungId);
+}
+
+export async function bargeldEinzahlungStornieren(einzahlungId, benutzerName, kommentar = null) {
+  const einzahlung = await get("bargeld_einzahlungen", einzahlungId);
+  if (!einzahlung) throw new Error("Einzahlung nicht gefunden.");
+  if (einzahlung.storno_von) throw new Error("Eine Storno-Einzahlung kann nicht erneut storniert werden.");
+  if (await bargeldEinzahlungIstStorniert(einzahlungId)) {
+    throw new Error("Diese Einzahlung wurde bereits storniert.");
+  }
+  const stornoId = neueId();
+  const gid = await geraetId();
+  await put("bargeld_einzahlungen", {
+    id: stornoId,
+    datum: jetzt(),
+    veranstaltung: einzahlung.veranstaltung,
+    betrag: -einzahlung.betrag,
+    kommentar: kommentar || `Storno zu Einzahlung ${einzahlungId}`,
+    storno_von: einzahlungId,
+    rechner: GERAET_NAME,
+    geraet_id: gid,
+    synced: false,
+    synced_at: null,
+    benutzer: benutzerName,
+  });
+  return stornoId;
+}
+
+async function bargeldEinzahlungenSumme(veranstaltung, seit) {
+  const alle = await getAll("bargeld_einzahlungen");
+  const summe = alle
+    .filter((e) => e.veranstaltung === veranstaltung && e.datum > seit)
+    .reduce((s, e) => s + e.betrag, 0);
+  return rund2(summe);
+}
+
+// ---------------------------------------------------------------------
 // Kassensturz (mit explizitem Anfangsbestand / Wechselgeld) - Pendant zu
 // repository.letzter_kassensturz / kassensturz_vorschau /
 // kassensturz_durchfuehren
@@ -302,13 +376,15 @@ export async function kassensturzVorschau(veranstaltung) {
       .reduce((s, v) => s + v.gesamtbetrag, 0)
   );
   const auszahlungen = await schiedsrichterAuszahlungenSumme(veranstaltung, seit);
+  const einzahlungen = await bargeldEinzahlungenSumme(veranstaltung, seit);
 
   return {
     istErsterKassensturz: letzter === null,
     anfangsbestand: rund2(anfangsbestand),
     einnahmen,
     auszahlungen,
-    soll: rund2(anfangsbestand + einnahmen - auszahlungen),
+    einzahlungen,
+    soll: rund2(anfangsbestand + einnahmen - auszahlungen + einzahlungen),
   };
 }
 
@@ -321,7 +397,7 @@ export async function kassensturzDurchfuehren(
 ) {
   const vorschau = await kassensturzVorschau(veranstaltung);
   const anfangsbestand = anfangsbestandOverride ?? vorschau.anfangsbestand;
-  const soll = rund2(anfangsbestand + vorschau.einnahmen - vorschau.auszahlungen);
+  const soll = rund2(anfangsbestand + vorschau.einnahmen - vorschau.auszahlungen + vorschau.einzahlungen);
   const differenz = rund2(gezaehlterBetrag - soll);
   const ksId = neueId();
   const gid = await geraetId();

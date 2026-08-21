@@ -41,6 +41,7 @@
       <button id="tab-storno">Stornieren</button>
       <button id="tab-kassensturz">Kassensturz</button>
       <button id="tab-schiedsrichter">Schiedsrichter</button>
+      <button id="tab-einzahlen">Einzahlen</button>
       <button id="tab-termine">Termine</button>
     </nav>
 
@@ -104,6 +105,7 @@
           <div class="kennzahl-zeile"><span>Anfangsbestand</span><span id="ks-anfangsbestand"></span></div>
           <div class="kennzahl-zeile"><span>Einnahmen seit letztem Kassensturz</span><span id="ks-einnahmen"></span></div>
           <div class="kennzahl-zeile"><span>Schiedsrichter-Auszahlungen</span><span id="ks-auszahlungen"></span></div>
+          <div class="kennzahl-zeile"><span>Bargeld-Einzahlungen</span><span id="ks-einzahlungen"></span></div>
           <div class="kennzahl-zeile gesamt"><span>Soll</span><span id="ks-soll"></span></div>
 
           <label><b>Tatsächlich gezählt (Ist):</b></label>
@@ -149,6 +151,34 @@
           <table class="liste" id="sr-tabelle">
             <thead>
               <tr><th>Datum</th><th>Mannschaft</th><th>Schiedsrichter</th><th>Betrag</th><th>Status</th><th></th></tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Bargeld-Einzahlungen -->
+      <section id="einzahlen-view" style="display:none;">
+        <div class="karte" style="max-width:480px;">
+          <h2 style="margin-top:0; color:var(--blau-dunkel);">Bargeld einzahlen – <span id="ez-kasse-name"></span></h2>
+          <p class="hinweis">
+            Zusätzliches Bargeld in die aktive Kasse einlegen (z.B. Wechselgeld-Nachschub
+            oder ein Vorschuss für den Wareneinkauf). Erhöht das Bargeld in der Kasse und
+            wird beim nächsten Kassensturz automatisch berücksichtigt.
+          </p>
+          <label><b>Betrag:</b></label>
+          <input type="number" inputmode="decimal" step="0.01" class="betrag" id="ez-betrag-feld" />
+          <label><b>Kommentar (optional):</b></label>
+          <input type="text" class="betrag" id="ez-kommentar-feld" />
+          <div id="ez-fehler" class="pin-fehler"></div>
+          <button id="ez-einzahlen-btn" class="btn btn-primaer" style="width:100%;">Einzahlen</button>
+        </div>
+
+        <div class="karte">
+          <h2 style="margin-top:0; color:var(--blau-dunkel);">Letzte Einzahlungen</h2>
+          <table class="liste" id="ez-tabelle">
+            <thead>
+              <tr><th>Datum</th><th>Betrag</th><th>Kommentar</th><th>Status</th><th></th></tr>
             </thead>
             <tbody></tbody>
           </table>

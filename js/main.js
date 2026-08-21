@@ -30,6 +30,7 @@ const tabVerkauf = el("tab-verkauf");
 const tabStorno = el("tab-storno");
 const tabKassensturz = el("tab-kassensturz");
 const tabSchiedsrichter = el("tab-schiedsrichter");
+const tabEinzahlen = el("tab-einzahlen");
 const tabTermine = el("tab-termine");
 
 const kassenvorschlagBanner = el("kassenvorschlag-banner");
@@ -42,6 +43,7 @@ const verkaufView = el("verkauf-view");
 const stornoView = el("storno-view");
 const kassensturzView = el("kassensturz-view");
 const schiedsrichterView = el("schiedsrichter-view");
+const einzahlenView = el("einzahlen-view");
 const termineView = el("termine-view");
 
 const loginNutzerauswahl = el("login-nutzerauswahl");
@@ -66,6 +68,7 @@ const ksKasseName = el("ks-kasse-name");
 const ksAnfangsbestand = el("ks-anfangsbestand");
 const ksEinnahmen = el("ks-einnahmen");
 const ksAuszahlungen = el("ks-auszahlungen");
+const ksEinzahlungen = el("ks-einzahlungen");
 const ksSoll = el("ks-soll");
 const ksGezaehltFeld = el("ks-gezaehlt-feld");
 const ksDifferenz = el("ks-differenz");
@@ -81,6 +84,13 @@ const srKommentarFeld = el("sr-kommentar-feld");
 const srFehler = el("sr-fehler");
 const srAuszahlenBtn = el("sr-auszahlen-btn");
 const srTabelleBody = document.querySelector("#sr-tabelle tbody");
+
+const ezKasseName = el("ez-kasse-name");
+const ezBetragFeld = el("ez-betrag-feld");
+const ezKommentarFeld = el("ez-kommentar-feld");
+const ezFehler = el("ez-fehler");
+const ezEinzahlenBtn = el("ez-einzahlen-btn");
+const ezTabelleBody = document.querySelector("#ez-tabelle tbody");
 
 const tsTeamAuswahl = el("ts-team-auswahl");
 const tsDatumFeld = el("ts-datum-feld");
@@ -118,7 +128,7 @@ let warenkorb = []; // {produktId, name, menge, einzelpreis, einkaufspreis, mwst
 let helferpreisAktiv = false;
 let angemeldeterKandidat = null; // Benutzer, dessen PIN gerade eingegeben wird
 let pinEingabe = "";
-let aktuelleAnsicht = "login"; // 'login' | 'verkauf' | 'storno' | 'kassensturz' | 'schiedsrichter' | 'termine'
+let aktuelleAnsicht = "login"; // 'login' | 'verkauf' | 'storno' | 'kassensturz' | 'schiedsrichter' | 'einzahlen' | 'termine'
 let letzterKassensturzSoll = 0;
 let vorgaengeCache = []; // fuer Storno-Ansicht
 let abgelehnteKassenvorschlaege = new Set(); // "schluessel" bereits verworfener Vorschlaege
@@ -184,6 +194,7 @@ function zeigeHauptView(name) {
     stornoView.style.display = "none";
     kassensturzView.style.display = "none";
     schiedsrichterView.style.display = "none";
+    einzahlenView.style.display = "none";
     termineView.style.display = "none";
     kassenvorschlagBanner.classList.add("versteckt");
     tabsEl.style.display = "none";
@@ -206,18 +217,21 @@ function zeigeHauptView(name) {
   stornoView.style.display = name === "storno" ? "" : "none";
   kassensturzView.style.display = name === "kassensturz" ? "" : "none";
   schiedsrichterView.style.display = name === "schiedsrichter" ? "" : "none";
+  einzahlenView.style.display = name === "einzahlen" ? "" : "none";
   termineView.style.display = name === "termine" ? "" : "none";
 
   tabVerkauf.classList.toggle("aktiv", name === "verkauf");
   tabStorno.classList.toggle("aktiv", name === "storno");
   tabKassensturz.classList.toggle("aktiv", name === "kassensturz");
   tabSchiedsrichter.classList.toggle("aktiv", name === "schiedsrichter");
+  tabEinzahlen.classList.toggle("aktiv", name === "einzahlen");
   tabTermine.classList.toggle("aktiv", name === "termine");
 
   if (name === "verkauf") renderProduktGrid();
   if (name === "storno") renderStornoListe();
   if (name === "kassensturz") renderKassensturz();
   if (name === "schiedsrichter") renderSchiedsrichter();
+  if (name === "einzahlen") renderEinzahlungen();
   if (name === "termine") renderTermine();
 }
 
@@ -589,6 +603,7 @@ async function renderKassensturz() {
   ksAnfangsbestand.textContent = euro(vorschau.anfangsbestand);
   ksEinnahmen.textContent = euro(vorschau.einnahmen, true);
   ksAuszahlungen.textContent = euro(vorschau.auszahlungen);
+  ksEinzahlungen.textContent = euro(vorschau.einzahlungen);
   ksSoll.textContent = euro(vorschau.soll);
 
   ksGezaehltFeld.value = "";
@@ -746,6 +761,92 @@ async function schiedsrichterAuszahlen() {
 }
 
 // ---------------------------------------------------------------------
+// Bargeld-Einzahlungen
+// ---------------------------------------------------------------------
+
+async function renderEinzahlungen() {
+  const aktiveKasse = session.getAktiveKasse();
+  ezKasseName.textContent = KASSE_LABEL[aktiveKasse] ?? aktiveKasse;
+  ezFehler.textContent = "";
+
+  const alle = await repo.letzteBargeldEinzahlungen(500);
+  const stornierteIds = new Set(alle.filter((e) => e.storno_von).map((e) => e.storno_von));
+  const anzeige = alle.filter((e) => e.veranstaltung === aktiveKasse).slice(0, 50);
+
+  ezTabelleBody.innerHTML = "";
+  for (const einzahlung of anzeige) {
+    const tr = document.createElement("tr");
+    let status = "Aktiv";
+    if (einzahlung.storno_von) status = "Storno";
+    else if (stornierteIds.has(einzahlung.id)) status = "Storniert";
+    if (status !== "Aktiv") tr.classList.add("storniert");
+
+    const zellen = [
+      formatDatumUhrzeit(einzahlung.datum),
+      euro(einzahlung.betrag, true),
+      einzahlung.kommentar || "–",
+      status,
+    ];
+    for (const wert of zellen) {
+      const td = document.createElement("td");
+      td.textContent = wert;
+      tr.appendChild(td);
+    }
+
+    const tdAktion = document.createElement("td");
+    if (status === "Aktiv") {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "btn";
+      btn.textContent = "Stornieren";
+      btn.onclick = async () => {
+        const ok = await zeigeBestaetigung(
+          "Einzahlung stornieren?",
+          `Die Einzahlung vom ${formatDatumUhrzeit(einzahlung.datum)} über ${euro(einzahlung.betrag)} wird storniert. Das kann nicht rückgängig gemacht werden.`,
+          "Stornieren"
+        );
+        if (!ok) return;
+        const benutzer = session.getAktuellerBenutzer();
+        try {
+          await repo.bargeldEinzahlungStornieren(einzahlung.id, benutzer.name);
+        } catch (exc) {
+          zeigeHinweis("Fehler beim Stornieren", exc.message ?? String(exc));
+          return;
+        }
+        renderEinzahlungen();
+      };
+      tdAktion.appendChild(btn);
+    }
+    tr.appendChild(tdAktion);
+    ezTabelleBody.appendChild(tr);
+  }
+}
+
+async function bargeldEinzahlen() {
+  const betrag = parseFloat(ezBetragFeld.value);
+  if (isNaN(betrag) || betrag <= 0) {
+    ezFehler.textContent = "Bitte einen gültigen Betrag größer als 0 eingeben.";
+    return;
+  }
+  const benutzer = session.getAktuellerBenutzer();
+  try {
+    await repo.bargeldEinzahlungErfassen(
+      session.getAktiveKasse(),
+      betrag,
+      ezKommentarFeld.value.trim(),
+      benutzer.name
+    );
+  } catch (exc) {
+    ezFehler.textContent = exc.message ?? String(exc);
+    return;
+  }
+  ezBetragFeld.value = "";
+  ezKommentarFeld.value = "";
+  ezFehler.textContent = "";
+  renderEinzahlungen();
+}
+
+// ---------------------------------------------------------------------
 // Termine (Heimspiele eintragen + Trainingsplan anzeigen)
 // ---------------------------------------------------------------------
 
@@ -871,6 +972,7 @@ function aktualisiereAktuelleAnsichtNachKassenwechsel() {
   if (aktuelleAnsicht === "storno") renderStornoListe();
   if (aktuelleAnsicht === "kassensturz") renderKassensturz();
   if (aktuelleAnsicht === "schiedsrichter") renderSchiedsrichter();
+  if (aktuelleAnsicht === "einzahlen") renderEinzahlungen();
 }
 
 // ---------------------------------------------------------------------
@@ -920,6 +1022,8 @@ async function nachSyncAktualisieren() {
     renderKassensturz();
   } else if (aktuelleAnsicht === "schiedsrichter") {
     renderSchiedsrichter();
+  } else if (aktuelleAnsicht === "einzahlen") {
+    renderEinzahlungen();
   } else if (aktuelleAnsicht === "termine") {
     renderTermine();
   }
@@ -1028,8 +1132,10 @@ function wireEvents() {
   tabStorno.onclick = () => zeigeHauptView("storno");
   tabKassensturz.onclick = () => zeigeHauptView("kassensturz");
   tabSchiedsrichter.onclick = () => zeigeHauptView("schiedsrichter");
+  tabEinzahlen.onclick = () => zeigeHauptView("einzahlen");
   tabTermine.onclick = () => zeigeHauptView("termine");
   srAuszahlenBtn.onclick = schiedsrichterAuszahlen;
+  ezEinzahlenBtn.onclick = bargeldEinzahlen;
   tsEintragenBtn.onclick = heimspielEintragen;
 
   kassenvorschlagUebernehmenBtn.onclick = kassenvorschlagUebernehmen;
