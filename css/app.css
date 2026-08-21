@@ -348,6 +348,15 @@ button.btn-primaer:active {
   background: var(--gelb);
   border: 2px solid var(--gelb-dunkel);
 }
+.pfand-rueckgabe-btn {
+  width: 100%;
+  margin-bottom: 10px;
+}
+.pfand-rueckgabe-btn.aktiv {
+  background: var(--rot);
+  border: 2px solid var(--rot);
+  color: white;
+}
 
 /* -------------------- Tabellen (Storno/Kassensturz) -------------------- */
 table.liste {

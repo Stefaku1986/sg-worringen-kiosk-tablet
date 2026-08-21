@@ -45,7 +45,7 @@ const ALLE_TABELLEN = [...NUR_LESEN_TABELLEN, ...SCHREIBBARE_TABELLEN];
 const BOOL_SPALTEN = {
   produkte: ["aktiv"],
   trainingszeiten: ["aktiv"],
-  positionen: ["ist_helferpreis"],
+  positionen: ["ist_helferpreis", "ist_pfandrueckgabe"],
   benutzer: ["ist_admin", "aktiv"],
 };
 
@@ -127,14 +127,49 @@ async function pullTabelle(tabelle) {
   return zeilen.length;
 }
 
+// Maximale Dauer eines Sync-Versuchs. Ohne dieses Zeitlimit kann der Sync-
+// Knopf theoretisch fuer immer bei "Synchronisiere..." haengen bleiben, ohne
+// jede Rueckmeldung - das ist tatsaechlich vorgekommen (21.08.2026), als auf
+// einem Android-Tablet noch eine alte App-Instanz (z.B. ein zweiter Tab) im
+// Hintergrund offen war und dadurch die lokale Datenbank-Aktualisierung
+// (siehe db.js, openDb()) blockiert hat, ohne dass Supabase oder das
+// nachgeladene esm.sh-Skript selbst das Problem waren - beide waren fuer
+// sich genommen einwandfrei erreichbar. Ein hartes Zeitlimit sorgt dafuer,
+// dass die App in so einem Fall spaetestens nach dieser Zeit eine konkrete,
+// hilfreiche Fehlermeldung zeigt statt endlos stumm zu haengen.
+const SYNC_TIMEOUT_MS = 20_000;
+
+function verzoegerung(ms, wert) {
+  return new Promise((resolve) => setTimeout(() => resolve(wert), ms));
+}
+
 export async function syncJetzt() {
   const ergebnis = { gepusht: 0, geholt: 0, zeitpunkt: null, fehler: null };
+  const ZEITUEBERSCHREITUNG = Symbol("zeitueberschreitung");
   try {
-    for (const tabelle of SCHREIBBARE_TABELLEN) {
-      ergebnis.gepusht += await pushTabelle(tabelle);
-    }
-    for (const tabelle of ALLE_TABELLEN) {
-      ergebnis.geholt += await pullTabelle(tabelle);
+    // Laeuft bewusst als eigenstaendiges Promise weiter, auch wenn das
+    // Zeitlimit unten zuerst greift: die einzelnen Tabellen-Operationen
+    // schreiben ihre Teilergebnisse direkt in "ergebnis" (per Referenz),
+    // ein evtl. verspaeteter Erfolg geht also nicht verloren, auch wenn
+    // schon eine Zeitueberschreitung gemeldet wurde.
+    const lauf = (async () => {
+      for (const tabelle of SCHREIBBARE_TABELLEN) {
+        ergebnis.gepusht += await pushTabelle(tabelle);
+      }
+      for (const tabelle of ALLE_TABELLEN) {
+        ergebnis.geholt += await pullTabelle(tabelle);
+      }
+    })();
+    const wettlaufErgebnis = await Promise.race([
+      lauf.then(() => null),
+      verzoegerung(SYNC_TIMEOUT_MS, ZEITUEBERSCHREITUNG),
+    ]);
+    if (wettlaufErgebnis === ZEITUEBERSCHREITUNG) {
+      throw new Error(
+        `Zeitüberschreitung nach ${SYNC_TIMEOUT_MS / 1000}s – läuft die App ` +
+          "evtl. noch in einem anderen Tab/Fenster? Bitte alle Tabs schließen " +
+          "und die App neu öffnen."
+      );
     }
     ergebnis.zeitpunkt = new Date().toISOString();
     synchronisiertCallback?.(ergebnis);

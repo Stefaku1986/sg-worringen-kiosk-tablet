@@ -54,6 +54,22 @@ export function openDb() {
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
+    // Wird ausgeloest, wenn eine hoehere DB_VERSION geoeffnet werden soll,
+    // aber noch eine andere Verbindung (z.B. ein zweiter Tab oder eine im
+    // Hintergrund haengengebliebene alte Instanz dieser App) mit der alten
+    // Version offen ist - der Browser wartet dann, bis diese andere
+    // Verbindung schliesst, OHNE onsuccess/onerror auszuloesen (das kann
+    // ohne Zutun des Nutzers beliebig lange dauern). Bewusst nur ein
+    // Konsolen-Hinweis zur Fehlersuche: das eigentliche Zeitlimit dafuer
+    // sitzt in sync.js (SYNC_TIMEOUT_MS), da openDb() hier selbst nicht
+    // sicher abbrechen kann, ohne die andere Verbindung zu gefaehrden.
+    req.onblocked = () => {
+      console.warn(
+        "IndexedDB-Öffnen blockiert: vermutlich ist noch eine andere " +
+          "Instanz dieser App (z.B. ein zweiter Tab) offen. Alle Tabs/" +
+          "Instanzen schließen behebt das."
+      );
+    };
   });
   return dbPromise;
 }

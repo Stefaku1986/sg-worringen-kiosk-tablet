@@ -73,10 +73,22 @@ async function lagerbewegungErfassen(produktId, typ, menge, kommentar, benutzerN
 // ---------------------------------------------------------------------
 
 // warenkorb: Liste von {produktId, name, menge, einzelpreis, einkaufspreis,
-// mwstSatz, istHelferpreis}.
+// mwstSatz, istHelferpreis, pfandBetrag, istPfandrueckgabe}. pfandBetrag
+// (pro Stueck, 0 falls kein Pfand) fliesst mit in den Gesamtbetrag ein -
+// das Pfand landet real in der Kasse und muss beim Kassensturz genauso
+// mitgezaehlt werden wie der eigentliche Warenerloes (Pendant zu
+// repository.kassiervorgang_abschliessen). Eine Pfandrueckgabe-Position
+// (istPfandrueckgabe = true, siehe main.js "Pfand zurueckgeben"-Knopf) hat
+// einzelpreis = 0 und einen NEGATIVEN pfandBetrag - sie mindert den
+// Gesamtbetrag dadurch automatisch, ohne dass an dieser Berechnung etwas
+// geaendert werden musste. Sie bucht bewusst KEINEN Warenausgang: das
+// Zurueckbringen einer leeren Flasche ist kein Lagerbestands-Ereignis fuer
+// das Getraenk, sondern eine reine Bargeld-Rueckzahlung.
 export async function kassiervorgangAbschliessen(veranstaltung, warenkorb, gegeben, benutzerName) {
   if (!warenkorb.length) throw new Error("Warenkorb ist leer.");
-  const gesamtbetrag = rund2(warenkorb.reduce((s, p) => s + p.menge * p.einzelpreis, 0));
+  const gesamtbetrag = rund2(
+    warenkorb.reduce((s, p) => s + p.menge * (p.einzelpreis + (p.pfandBetrag || 0)), 0)
+  );
   const rueckgeld = rund2(gegeben - gesamtbetrag);
   if (rueckgeld < 0) throw new Error("Gegebener Betrag ist kleiner als der Gesamtbetrag.");
 
@@ -109,10 +121,13 @@ export async function kassiervorgangAbschliessen(veranstaltung, warenkorb, gegeb
       einkaufspreis: position.einkaufspreis,
       mwst_satz: position.mwstSatz,
       ist_helferpreis: position.istHelferpreis ? 1 : 0,
+      pfand_betrag: position.pfandBetrag || 0,
+      ist_pfandrueckgabe: position.istPfandrueckgabe ? 1 : 0,
       geraet_id: gid,
       synced: false,
       synced_at: null,
     });
+    if (position.istPfandrueckgabe) continue;
     await lagerbewegungErfassen(
       position.produktId,
       "Warenausgang",
@@ -178,10 +193,13 @@ export async function vorgangStornieren(vorgangId, benutzerName, kommentar = nul
       einkaufspreis: pos.einkaufspreis,
       mwst_satz: pos.mwst_satz,
       ist_helferpreis: pos.ist_helferpreis,
+      pfand_betrag: pos.pfand_betrag || 0,
+      ist_pfandrueckgabe: pos.ist_pfandrueckgabe || 0,
       geraet_id: gid,
       synced: false,
       synced_at: null,
     });
+    if (pos.ist_pfandrueckgabe) continue;
     await lagerbewegungErfassen(
       pos.produkt_id,
       "Korrektur",

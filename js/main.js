@@ -58,6 +58,7 @@ const pinZurueckBtn = el("pin-zurueck-btn");
 
 const produktGrid = el("produkt-grid");
 const helferpreisBtn = el("helferpreis-btn");
+const pfandRueckgabeBtn = el("pfand-rueckgabe-btn");
 const warenkorbListe = el("warenkorb-liste");
 const summeEl = el("summe");
 const bezahlenBtn = el("bezahlen-btn");
@@ -124,8 +125,9 @@ const WOCHENTAG_LABEL = { 1: "Montag", 2: "Dienstag", 3: "Mittwoch", 4: "Donners
 
 let produkteCache = [];
 let benutzerCache = [];
-let warenkorb = []; // {produktId, name, menge, einzelpreis, einkaufspreis, mwstSatz, istHelferpreis}
+let warenkorb = []; // {produktId, name, menge, einzelpreis, einkaufspreis, mwstSatz, istHelferpreis, pfandBetrag, istPfandrueckgabe}
 let helferpreisAktiv = false;
+let pfandRueckgabeAktiv = false;
 let angemeldeterKandidat = null; // Benutzer, dessen PIN gerade eingegeben wird
 let pinEingabe = "";
 let aktuelleAnsicht = "login"; // 'login' | 'verkauf' | 'storno' | 'kassensturz' | 'schiedsrichter' | 'einzahlen' | 'termine'
@@ -322,6 +324,7 @@ function nachAnmeldungAnzeigen() {
   kasseAuswahl.value = session.getAktiveKasse();
   warenkorb = [];
   helferpreisAktiv = false;
+  pfandRueckgabeAktiv = false;
   abgelehnteKassenvorschlaege = new Set();
   zeigeHauptView("verkauf");
   pruefeKassenvorschlag();
@@ -331,6 +334,7 @@ function abmelden() {
   session.abmelden();
   warenkorb = [];
   helferpreisAktiv = false;
+  pfandRueckgabeAktiv = false;
   renderLoginNutzer();
   zeigeHauptView("login");
 }
@@ -395,7 +399,21 @@ function renderProduktGrid() {
         helferzeile.textContent = `Helfer: ${euro(produkt.helferpreis)}`;
         kachel.appendChild(helferzeile);
       }
-      kachel.onclick = () => warenkorbHinzufuegen(produkt);
+      if (produkt.pfand_betrag) {
+        const pfandzeile = document.createElement("div");
+        pfandzeile.style.fontSize = "12px";
+        pfandzeile.style.fontWeight = "400";
+        pfandzeile.style.color = "#666";
+        pfandzeile.textContent = `+${euro(produkt.pfand_betrag)} Pfand`;
+        kachel.appendChild(pfandzeile);
+      }
+      kachel.onclick = () => {
+        if (pfandRueckgabeAktiv) {
+          pfandRueckgabeHinzufuegen(produkt);
+        } else {
+          warenkorbHinzufuegen(produkt);
+        }
+      };
       produktGrid.appendChild(kachel);
     }
   }
@@ -404,7 +422,9 @@ function renderProduktGrid() {
 function warenkorbHinzufuegen(produkt) {
   const istHelfer = helferpreisAktiv;
   const einzelpreis = istHelfer ? produkt.helferpreis ?? produkt.verkaufspreis : produkt.verkaufspreis;
-  const bestehend = warenkorb.find((z) => z.produktId === produkt.id && z.istHelferpreis === istHelfer);
+  const bestehend = warenkorb.find(
+    (z) => z.produktId === produkt.id && z.istHelferpreis === istHelfer && !z.istPfandrueckgabe
+  );
   if (bestehend) {
     bestehend.menge += 1;
   } else {
@@ -416,10 +436,48 @@ function warenkorbHinzufuegen(produkt) {
       einkaufspreis: produkt.einkaufspreis,
       mwstSatz: produkt.mwst_satz,
       istHelferpreis: istHelfer,
+      pfandBetrag: produkt.pfand_betrag || 0,
+      istPfandrueckgabe: false,
     });
   }
   helferpreisAktiv = false;
   helferpreisBtn.classList.remove("aktiv");
+  renderWarenkorb();
+}
+
+// "Pfand zurueckgeben": Gegenstueck zu warenkorbHinzufuegen fuer
+// zurueckgebrachtes Leergut. Bucht eine eigenstaendige Warenkorb-Position
+// mit einzelpreis 0 und dem NEGATIVEN Pfandbetrag des Produkts (siehe
+// repo.js kassiervorgangAbschliessen: mindert den Gesamtbetrag automatisch
+// und bucht bewusst keinen Warenausgang). Wie der Helferpreis-Knopf schaltet
+// sich der Umschalter nach einem Tastendruck automatisch wieder aus - bei
+// mehreren zurueckgebrachten Flaschensorten also erneut antippen.
+function pfandRueckgabeHinzufuegen(produkt) {
+  pfandRueckgabeAktiv = false;
+  pfandRueckgabeBtn.classList.remove("aktiv");
+  if (!produkt.pfand_betrag) {
+    zeigeHinweis(
+      "Kein Pfand hinterlegt",
+      `Für "${produkt.name}" ist kein Pfandbetrag hinterlegt, es gibt daher nichts zurückzugeben.`
+    );
+    return;
+  }
+  const bestehend = warenkorb.find((z) => z.produktId === produkt.id && z.istPfandrueckgabe);
+  if (bestehend) {
+    bestehend.menge += 1;
+  } else {
+    warenkorb.push({
+      produktId: produkt.id,
+      name: produkt.name,
+      menge: 1,
+      einzelpreis: 0,
+      einkaufspreis: 0,
+      mwstSatz: 0,
+      istHelferpreis: false,
+      pfandBetrag: -produkt.pfand_betrag,
+      istPfandrueckgabe: true,
+    });
+  }
   renderWarenkorb();
 }
 
@@ -431,7 +489,13 @@ function renderWarenkorb() {
 
     const name = document.createElement("span");
     name.className = "name";
-    name.textContent = `${zeile.name} (${euro(zeile.einzelpreis)})`;
+    if (zeile.istPfandrueckgabe) {
+      name.textContent = `Pfand zurück: ${zeile.name} (${euro(zeile.pfandBetrag)})`;
+      name.style.color = "var(--rot)";
+    } else {
+      const pfandHinweis = zeile.pfandBetrag ? ` +${euro(zeile.pfandBetrag)} Pfand` : "";
+      name.textContent = `${zeile.name} (${euro(zeile.einzelpreis)}${pfandHinweis})`;
+    }
 
     const minus = document.createElement("button");
     minus.type = "button";
@@ -474,13 +538,13 @@ function renderWarenkorb() {
     warenkorbListe.appendChild(div);
   }
 
-  const summe = warenkorb.reduce((s, z) => s + z.menge * z.einzelpreis, 0);
+  const summe = warenkorbSumme();
   summeEl.textContent = `Summe: ${euro(summe)}`;
   bezahlenBtn.disabled = warenkorb.length === 0;
 }
 
 function warenkorbSumme() {
-  return warenkorb.reduce((s, z) => s + z.menge * z.einzelpreis, 0);
+  return warenkorb.reduce((s, z) => s + z.menge * (z.einzelpreis + (z.pfandBetrag || 0)), 0);
 }
 
 function bezahlenOeffnen() {
@@ -522,7 +586,9 @@ async function bezahlenBestaetigen() {
   }
   warenkorb = [];
   helferpreisAktiv = false;
+  pfandRueckgabeAktiv = false;
   helferpreisBtn.classList.remove("aktiv");
+  pfandRueckgabeBtn.classList.remove("aktiv");
   renderWarenkorb();
   bezahlenSchliessen();
 }
@@ -1044,7 +1110,7 @@ async function syncManuellAusloesen() {
   syncStatusEl.textContent = "Synchronisiere…";
   const ergebnis = await syncJetzt();
   if (ergebnis.fehler) {
-    syncStatusEl.textContent = "Sync fehlgeschlagen – ist Internet verfügbar (z.B. Hotspot)?";
+    syncStatusEl.textContent = `Sync fehlgeschlagen: ${ergebnis.fehler}`;
   }
   syncJetztBtn.disabled = false;
 }
@@ -1144,6 +1210,19 @@ function wireEvents() {
   helferpreisBtn.onclick = () => {
     helferpreisAktiv = !helferpreisAktiv;
     helferpreisBtn.classList.toggle("aktiv", helferpreisAktiv);
+    if (helferpreisAktiv) {
+      pfandRueckgabeAktiv = false;
+      pfandRueckgabeBtn.classList.remove("aktiv");
+    }
+  };
+
+  pfandRueckgabeBtn.onclick = () => {
+    pfandRueckgabeAktiv = !pfandRueckgabeAktiv;
+    pfandRueckgabeBtn.classList.toggle("aktiv", pfandRueckgabeAktiv);
+    if (pfandRueckgabeAktiv) {
+      helferpreisAktiv = false;
+      helferpreisBtn.classList.remove("aktiv");
+    }
   };
 
   bezahlenBtn.onclick = bezahlenOeffnen;
