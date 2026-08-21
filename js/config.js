@@ -8,6 +8,14 @@
 export const SUPABASE_URL = "https://tmqdaxkwxdzpifqaaqbm.supabase.co";
 export const SUPABASE_ANON_KEY = "sb_publishable_UGRAXILrHUkfckecBNXLrQ_6Mgrq_sQ";
 
+// Sichtbare Versionsnummer der Tablet-App, unabhaengig von CACHE_NAME in
+// service-worker.js (das ist nur ein technischer Cache-Schluessel, keine
+// fuer Nutzer gedachte Versionsnummer). Wird in der Kopfleiste angezeigt,
+// analog zur Fenstertitel-Versionsanzeige der Windows-App (kiosk/__version__.py).
+// Bei sichtbaren Aenderungen an der Tablet-App bitte erhoehen (z.B. 1.1.0
+// fuer neue Funktionen, 1.0.1 fuer reine Bugfixes).
+export const APP_VERSION = "1.0.0";
+
 // Wie am Rechner: die Kassen, zwischen denen umgeschaltet werden kann.
 export const VERANSTALTUNGEN = ["Jugend", "Senioren"];
 

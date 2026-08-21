@@ -3,7 +3,7 @@
 // Schritt: einfaches DOM-Handling, wie es fuer eine kleine Kiosk-App
 // voellig ausreicht.
 
-import { SYNC_INTERVAL_SECONDS, TEAMS } from "./config.js";
+import { APP_VERSION, SYNC_INTERVAL_SECONDS, TEAMS } from "./config.js";
 import { euro, deZahl } from "./format.js";
 import * as repo from "./repo.js";
 import * as session from "./session.js";
@@ -15,6 +15,7 @@ import { syncJetzt, syncAutomatikStarten, onSynchronisiert } from "./sync.js";
 
 const el = (id) => document.getElementById(id);
 
+const appVersionEl = el("app-version");
 const kasseAuswahlBereich = el("kasse-auswahl-bereich");
 const kasseAuswahl = el("kasse-auswahl");
 const syncStatusEl = el("sync-status");
@@ -1153,6 +1154,7 @@ async function updatePruefen() {
 const KASSENVORSCHLAG_INTERVALL_MS = 2 * 60 * 1000;
 
 async function init() {
+  appVersionEl.textContent = `v${APP_VERSION}`;
   serviceWorkerRegistrieren();
   wireEvents();
   renderTastatur();

@@ -3,6 +3,15 @@
    angepasst. */
 
 :root {
+  /* Erzwingt helle native Steuerelemente (Auswahllisten, Kontrollkaestchen,
+     Bildlaufleisten, ...), unabhaengig vom Dunkelmodus des Systems/Browsers -
+     das Pendant zur QPalette in kiosk/ui/style.py. Ohne diese Zeile
+     uebernimmt der Browser bei aktiviertem System-Dunkelmodus fuer solche
+     Elemente automatisch dunkle Standardfarben, obwohl diese App gar keinen
+     Dunkelmodus vorsieht (siehe auch die Farbangaben unten, die genau
+     deshalb ueberall explizit gesetzt werden). */
+  color-scheme: light;
+
   --blau: #2f55a8;
   --blau-dunkel: #1c3a75;
   --blau-hell: #e8edf9;
@@ -59,6 +68,10 @@ button, input {
 #kopfleiste .titel {
   font-size: 16px;
   font-weight: 700;
+}
+#kopfleiste .app-version {
+  font-size: 12px;
+  opacity: 0.85;
 }
 #kopfleiste select {
   background: white;
@@ -200,6 +213,7 @@ button.btn-primaer:active {
 }
 .nutzer-grid button {
   background: white;
+  color: var(--text-dunkel);
   border: 2px solid var(--grau-rand);
   border-radius: 12px;
   padding: 18px 8px;
@@ -235,6 +249,7 @@ button.btn-primaer:active {
   border-radius: 10px;
   border: 1px solid var(--grau-rand);
   background: white;
+  color: var(--text-dunkel);
   cursor: pointer;
 }
 .tastatur button:active {
@@ -262,6 +277,7 @@ button.btn-primaer:active {
 }
 .produkt-kachel {
   background: white;
+  color: var(--text-dunkel);
   border: 2px solid var(--grau-rand);
   border-radius: 14px;
   padding: 10px;
@@ -369,10 +385,17 @@ table.liste button.btn {
   border-top: 2px solid var(--blau);
   padding-top: 10px;
 }
-input.betrag {
+/* .betrag wird auf <input>- UND auf mind. einem <select> (Team-Auswahl bei
+   den Terminen) verwendet - beide Tags brauchen dieselbe explizite Hell-
+   Faerbung, sonst greift bei <select> sonst nichts (der Selektor unten war
+   vorher auf "input.betrag" beschraenkt und traf das <select> gar nicht). */
+input.betrag,
+select.betrag {
   width: 100%;
   padding: 10px;
   font-size: 18px;
+  background: white;
+  color: var(--text-dunkel);
   border: 1px solid var(--grau-rand);
   border-radius: 6px;
   margin: 6px 0 14px 0;
