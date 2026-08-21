@@ -23,6 +23,7 @@ const updateStatusEl = el("update-status");
 const updatePruefenBtn = el("update-pruefen-btn");
 const benutzerLabel = el("benutzer-label");
 const abmeldenBtn = el("abmelden-btn");
+const beendenBtn = el("beenden-btn");
 const tabsEl = el("tabs");
 const tabVerkauf = el("tab-verkauf");
 const tabStorno = el("tab-storno");
@@ -944,6 +945,68 @@ async function syncManuellAusloesen() {
 }
 
 // ---------------------------------------------------------------------
+// App beenden
+// ---------------------------------------------------------------------
+// Gleiches Prinzip wie closeEvent() am Windows-Rechner: erst ein Hinweis,
+// dass fuers Beenden noch einmal synchronisiert wird (Internet noetig),
+// dann der eigentliche Sync-Versuch - und erst DANACH wird die App
+// tatsaechlich geschlossen. Zwei Unterschiede zum Windows-Rechner, die
+// sich aus dem Browser/PWA-Kontext ergeben: (1) es gibt keinen nativen
+// "X"-Knopf, den man abfangen koennte, daher der eigene "Beenden"-Knopf;
+// (2) window.close() darf ein Browser aus Sicherheitsgruenden verweigern
+// (z.B. wenn das Fenster nicht per Skript geoeffnet wurde) - das laesst
+// sich von hier aus nicht zuverlaessig erkennen, daher zusaetzlich immer
+// ein Hinweis, dass die App danach manuell geschlossen werden kann.
+
+// Wie am Windows-Rechner (dort per 5-Sekunden-QTimer): das Beenden darf
+// niemals haengen bleiben, auch nicht ganz ohne Internet.
+const APP_BEENDEN_TIMEOUT_MS = 5000;
+
+function appBeenden() {
+  hinweisTitel.textContent = "App beenden";
+  hinweisText.textContent =
+    "Vor dem Beenden wird noch einmal versucht zu synchronisieren. Dafür wird eine Internetverbindung benötigt (z.B. über einen Hotspot) - bitte sicherstellen, dass diese aktiv ist.";
+  hinweisAktionen.innerHTML = "";
+  const okBtn = document.createElement("button");
+  okBtn.id = "hinweis-ok-btn";
+  okBtn.className = "btn btn-primaer";
+  okBtn.textContent = "OK";
+  okBtn.onclick = () => {
+    hinweisSchliessen();
+    appBeendenSyncUndSchliessen();
+  };
+  hinweisAktionen.appendChild(okBtn);
+  hinweisOverlay.classList.remove("versteckt");
+}
+
+async function appBeendenSyncUndSchliessen() {
+  beendenBtn.disabled = true;
+  syncStatusEl.textContent = "Synchronisiere vor dem Beenden…";
+  await Promise.race([
+    syncJetzt(),
+    new Promise((resolve) => setTimeout(resolve, APP_BEENDEN_TIMEOUT_MS)),
+  ]);
+  beendenAusfuehren();
+}
+
+function beendenAusfuehren() {
+  // Funktioniert nur, wenn der Browser das erlaubt - klappt es, ist die
+  // Seite ab hier weg und der Code danach laeuft gar nicht mehr weiter.
+  window.close();
+  // Klappt es nicht (z.B. weil das Fenster nicht per Skript geoeffnet
+  // wurde, auf Android/Chrome bei eigenstaendig gestarteten PWAs
+  // durchaus ueblich), bleibt die Seite bestehen - dann diesen Hinweis
+  // zeigen, statt die Kassiererin/den Kassierer im Unklaren zu lassen.
+  setTimeout(() => {
+    beendenBtn.disabled = false;
+    zeigeHinweis(
+      "Synchronisierung abgeschlossen",
+      "Die App konnte nicht automatisch geschlossen werden. Sie können sie jetzt manuell schließen (z.B. über die zuletzt genutzten Apps oder den Zurück-Knopf des Tablets)."
+    );
+  }, 300);
+}
+
+// ---------------------------------------------------------------------
 // Events verdrahten
 // ---------------------------------------------------------------------
 
@@ -952,6 +1015,7 @@ function wireEvents() {
   abmeldenBtn.onclick = abmelden;
   syncJetztBtn.onclick = syncManuellAusloesen;
   updatePruefenBtn.onclick = updateButtonGeklickt;
+  beendenBtn.onclick = appBeenden;
 
   kasseAuswahl.onchange = () => {
     session.setAktiveKasse(kasseAuswahl.value);

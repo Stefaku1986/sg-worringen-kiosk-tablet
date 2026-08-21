@@ -81,6 +81,10 @@ button, input {
   color: var(--text-dunkel);
   font-weight: 700;
 }
+#kopfleiste button.btn-beenden {
+  color: var(--rot);
+  font-weight: 700;
+}
 
 button.btn {
   background: white;
