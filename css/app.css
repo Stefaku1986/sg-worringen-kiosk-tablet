@@ -1,0 +1,385 @@
+/* SG Köln-Worringen Look (Blau/Gelb) - Pendant zu kiosk/ui/style.py,
+   fürs Tablet auf große Touch-Ziele und eine responsive Kachel-Ansicht
+   angepasst. */
+
+:root {
+  --blau: #2f55a8;
+  --blau-dunkel: #1c3a75;
+  --blau-hell: #e8edf9;
+  --gelb: #fbf315;
+  --gelb-dunkel: #e6de00;
+  --grau-hintergrund: #f3f4f8;
+  --grau-rand: #d8dbe3;
+  --text-dunkel: #20242c;
+  --rot: #b3261e;
+  --gruen: #14632c;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: var(--grau-hintergrund);
+  color: var(--text-dunkel);
+  font-family: "Segoe UI", "Helvetica Neue", Roboto, Arial, sans-serif;
+  font-size: 16px;
+  -webkit-user-select: none;
+  user-select: none;
+  overscroll-behavior: none;
+}
+
+button, input {
+  font-family: inherit;
+  font-size: inherit;
+}
+
+#app {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+/* -------------------- Kopfleiste -------------------- */
+#kopfleiste {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--blau);
+  color: white;
+  padding: 10px 16px;
+  flex-wrap: wrap;
+}
+#kopfleiste img.logo {
+  height: 34px;
+}
+#kopfleiste .titel {
+  font-size: 16px;
+  font-weight: 700;
+}
+#kopfleiste select {
+  background: white;
+  color: var(--text-dunkel);
+  border: none;
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-weight: 600;
+}
+#kopfleiste .spacer {
+  flex: 1;
+}
+#kopfleiste .sync-status {
+  font-weight: 600;
+  font-size: 13px;
+}
+
+button.btn {
+  background: white;
+  color: var(--blau-dunkel);
+  border: 1px solid var(--grau-rand);
+  border-radius: 8px;
+  padding: 10px 16px;
+  font-weight: 600;
+  cursor: pointer;
+}
+#kopfleiste button.btn {
+  border: none;
+}
+button.btn:active {
+  background: var(--gelb);
+  color: var(--text-dunkel);
+}
+button.btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+button.btn-primaer {
+  background: var(--blau);
+  color: white;
+  border: none;
+  border-radius: 10px;
+  padding: 16px;
+  font-size: 18px;
+  font-weight: 700;
+}
+button.btn-primaer:active {
+  background: var(--blau-dunkel);
+}
+
+/* -------------------- Tabs -------------------- */
+#tabs {
+  display: flex;
+  gap: 4px;
+  background: white;
+  border-bottom: 1px solid var(--grau-rand);
+  padding: 8px 12px 0 12px;
+}
+#tabs button {
+  background: transparent;
+  border: none;
+  padding: 10px 20px;
+  font-weight: 700;
+  border-top-left-radius: 8px;
+  border-top-right-radius: 8px;
+  color: var(--text-dunkel);
+  cursor: pointer;
+}
+#tabs button.aktiv {
+  background: var(--blau);
+  color: white;
+}
+
+#ansicht {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+}
+
+.karte {
+  background: white;
+  border: 1px solid var(--grau-rand);
+  border-radius: 10px;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+/* -------------------- Login -------------------- */
+#login-view {
+  max-width: 480px;
+  margin: 24px auto;
+  text-align: center;
+}
+#login-view img.logo {
+  height: 64px;
+  margin-bottom: 8px;
+}
+#login-view h1 {
+  color: var(--blau-dunkel);
+  font-size: 20px;
+  margin: 0 0 20px 0;
+}
+.nutzer-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.nutzer-grid button {
+  background: white;
+  border: 2px solid var(--grau-rand);
+  border-radius: 12px;
+  padding: 18px 8px;
+  font-size: 16px;
+  font-weight: 700;
+  min-height: 72px;
+  cursor: pointer;
+}
+.nutzer-grid button:active {
+  background: var(--blau-hell);
+  border-color: var(--blau);
+}
+.pin-anzeige {
+  font-size: 32px;
+  letter-spacing: 10px;
+  padding: 12px;
+  min-height: 48px;
+}
+.pin-fehler {
+  color: var(--rot);
+  font-weight: 700;
+  min-height: 24px;
+}
+.tastatur {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 10px;
+  margin: 12px 0;
+}
+.tastatur button {
+  padding: 20px 8px;
+  font-size: 20px;
+  border-radius: 10px;
+  border: 1px solid var(--grau-rand);
+  background: white;
+  cursor: pointer;
+}
+.tastatur button:active {
+  background: var(--blau-hell);
+}
+.tastatur button.ok {
+  background: var(--blau);
+  color: white;
+  border: none;
+}
+
+/* -------------------- Verkauf -------------------- */
+#verkauf-view {
+  display: flex;
+  gap: 16px;
+  height: 100%;
+}
+#produkt-grid {
+  flex: 2;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  gap: 10px;
+  align-content: start;
+  overflow-y: auto;
+}
+.produkt-kachel {
+  background: white;
+  border: 2px solid var(--grau-rand);
+  border-radius: 14px;
+  padding: 10px;
+  font-weight: 700;
+  min-height: 92px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+  gap: 6px;
+}
+.produkt-kachel:active {
+  background: var(--gelb);
+  border-color: var(--gelb-dunkel);
+}
+.kategorie-titel {
+  grid-column: 1 / -1;
+  color: var(--blau-dunkel);
+  font-weight: 700;
+  padding-top: 6px;
+}
+
+#warenkorb-spalte {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 260px;
+}
+#warenkorb-liste {
+  flex: 1;
+  overflow-y: auto;
+  background: white;
+  border: 1px solid var(--grau-rand);
+  border-radius: 8px;
+}
+.warenkorb-zeile {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  border-bottom: 1px solid #eceef2;
+}
+.warenkorb-zeile .name {
+  flex: 1;
+}
+.warenkorb-zeile button.mini {
+  width: 30px;
+  height: 30px;
+  border-radius: 6px;
+  border: 1px solid var(--grau-rand);
+  background: white;
+  font-weight: 700;
+}
+#summe {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--blau-dunkel);
+  text-align: right;
+  padding: 10px 4px;
+}
+.helferpreis-btn {
+  width: 100%;
+  margin-bottom: 10px;
+}
+.helferpreis-btn.aktiv {
+  background: var(--gelb);
+  border: 2px solid var(--gelb-dunkel);
+}
+
+/* -------------------- Tabellen (Storno/Kassensturz) -------------------- */
+table.liste {
+  width: 100%;
+  border-collapse: collapse;
+  background: white;
+}
+table.liste th {
+  background: var(--blau);
+  color: white;
+  padding: 8px;
+  text-align: left;
+}
+table.liste td {
+  padding: 8px;
+  border-bottom: 1px solid #eceef2;
+}
+table.liste tr.storniert td {
+  color: #9aa0ac;
+}
+table.liste button.btn {
+  padding: 6px 10px;
+}
+
+/* -------------------- Kassensturz -------------------- */
+.kennzahl-zeile {
+  display: flex;
+  justify-content: space-between;
+  padding: 6px 0;
+  border-bottom: 1px solid #eceef2;
+}
+.kennzahl-zeile.gesamt {
+  font-weight: 700;
+  border-bottom: none;
+  border-top: 2px solid var(--blau);
+  padding-top: 10px;
+}
+input.betrag {
+  width: 100%;
+  padding: 10px;
+  font-size: 18px;
+  border: 1px solid var(--grau-rand);
+  border-radius: 6px;
+  margin: 6px 0 14px 0;
+}
+
+/* -------------------- Overlay / Modal -------------------- */
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 50;
+  padding: 16px;
+}
+.overlay.versteckt {
+  display: none;
+}
+.modal {
+  background: white;
+  border-radius: 12px;
+  padding: 20px;
+  max-width: 420px;
+  width: 100%;
+}
+.modal h2 {
+  margin-top: 0;
+  color: var(--blau-dunkel);
+  font-size: 17px;
+}
+.modal .aktionen {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.hinweis {
+  color: #666;
+  font-size: 14px;
+}

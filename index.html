@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+  <meta name="theme-color" content="#2f55a8" />
+  <title>SG Köln-Worringen – Kiosk-Kasse (Tablet)</title>
+  <link rel="manifest" href="manifest.json" />
+  <link rel="icon" href="icons/icon-192.png" />
+  <link rel="apple-touch-icon" href="icons/icon-192.png" />
+  <link rel="stylesheet" href="css/app.css" />
+</head>
+<body>
+  <div id="app">
+    <header id="kopfleiste">
+      <img class="logo" src="icons/logo.png" alt="SG Köln-Worringen" onerror="this.style.display='none'" />
+      <span class="titel">Kiosk-Kasse</span>
+
+      <div id="kasse-auswahl-bereich" style="display:none;">
+        <label style="margin-right:6px;"><b>Aktive Kasse:</b></label>
+        <select id="kasse-auswahl">
+          <option value="Jugend">Jugendkasse</option>
+          <option value="Senioren">Seniorenkasse</option>
+        </select>
+      </div>
+
+      <div class="spacer"></div>
+
+      <span id="sync-status" class="sync-status">Noch nicht synchronisiert</span>
+      <button id="sync-jetzt-btn" class="btn" style="display:none;">Sync</button>
+      <span id="benutzer-label" style="display:none; font-weight:700;"></span>
+      <button id="abmelden-btn" class="btn" style="display:none;">Abmelden</button>
+    </header>
+
+    <nav id="tabs" style="display:none;">
+      <button id="tab-verkauf" class="aktiv">Verkauf</button>
+      <button id="tab-storno">Stornieren</button>
+      <button id="tab-kassensturz">Kassensturz</button>
+    </nav>
+
+    <main id="ansicht">
+      <!-- Login -->
+      <section id="login-view">
+        <img class="logo" src="icons/logo.png" alt="" onerror="this.style.display='none'" />
+        <h1>SG Köln-Worringen – Kiosk-Kasse</h1>
+        <div id="login-nutzerauswahl">
+          <p class="hinweis">Bitte anmelden – wer bist du?</p>
+          <div id="nutzer-grid" class="nutzer-grid"></div>
+          <p id="login-leer-hinweis" class="pin-fehler" style="display:none;">
+            Es sind noch keine Benutzer geladen. Bitte einmal mit Internetverbindung starten.
+          </p>
+        </div>
+        <div id="login-pin-eingabe" style="display:none;">
+          <p id="pin-name-label" class="hinweis"></p>
+          <div id="pin-anzeige" class="pin-anzeige">–</div>
+          <div id="pin-fehler" class="pin-fehler"></div>
+          <div class="tastatur" id="tastatur"></div>
+          <button id="pin-zurueck-btn" class="btn" style="width:100%;">Zurück zur Benutzerauswahl</button>
+        </div>
+      </section>
+
+      <!-- Verkauf -->
+      <section id="verkauf-view" style="display:none;">
+        <div id="produkt-grid"></div>
+        <div id="warenkorb-spalte">
+          <button id="helferpreis-btn" class="btn helferpreis-btn">Helferpreis (für den nächsten Artikel)</button>
+          <div id="warenkorb-liste"></div>
+          <div id="summe">Summe: 0,00 €</div>
+          <button id="bezahlen-btn" class="btn btn-primaer">Bezahlen</button>
+        </div>
+      </section>
+
+      <!-- Storno -->
+      <section id="storno-view" style="display:none;">
+        <div class="karte">
+          <p class="hinweis">Letzte Kassiervorgänge (inkl. Stornos) – neueste zuerst.</p>
+          <table class="liste" id="storno-tabelle">
+            <thead>
+              <tr><th>Datum</th><th>Kasse</th><th>Betrag</th><th>Status</th><th></th></tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Kassensturz -->
+      <section id="kassensturz-view" style="display:none;">
+        <div class="karte" style="max-width:480px;">
+          <h2 style="margin-top:0; color:var(--blau-dunkel);">Kassensturz – <span id="ks-kasse-name"></span></h2>
+          <div class="kennzahl-zeile"><span>Anfangsbestand</span><span id="ks-anfangsbestand"></span></div>
+          <div class="kennzahl-zeile"><span>Einnahmen seit letztem Kassensturz</span><span id="ks-einnahmen"></span></div>
+          <div class="kennzahl-zeile"><span>Schiedsrichter-Auszahlungen</span><span id="ks-auszahlungen"></span></div>
+          <div class="kennzahl-zeile gesamt"><span>Soll</span><span id="ks-soll"></span></div>
+
+          <label><b>Tatsächlich gezählt (Ist):</b></label>
+          <input type="number" inputmode="decimal" step="0.01" class="betrag" id="ks-gezaehlt-feld" />
+
+          <div id="ks-differenz" class="kennzahl-zeile gesamt"></div>
+
+          <label><b>Startbetrag für nächste Runde:</b></label>
+          <input type="number" inputmode="decimal" step="0.01" class="betrag" id="ks-naechster-start-feld" />
+
+          <button id="ks-speichern-btn" class="btn btn-primaer" style="width:100%;">Kassensturz speichern</button>
+        </div>
+
+        <div class="karte">
+          <h2 style="margin-top:0; color:var(--blau-dunkel);">Verlauf</h2>
+          <table class="liste" id="ks-historie-tabelle">
+            <thead>
+              <tr><th>Datum</th><th>Kasse</th><th>Soll</th><th>Gezählt</th><th>Differenz</th></tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- Bezahlen-Dialog -->
+  <div id="bezahlen-overlay" class="overlay versteckt">
+    <div class="modal">
+      <h2>Bezahlen</h2>
+      <p style="text-align:center; font-size:20px; font-weight:700;" id="bezahlen-summe"></p>
+      <label><b>Gegeben:</b></label>
+      <input type="number" inputmode="decimal" step="0.01" class="betrag" id="gegeben-feld" />
+      <p id="rueckgeld-anzeige" style="text-align:center; font-size:22px;"></p>
+      <div class="aktionen">
+        <button id="bezahlen-abbrechen-btn" class="btn">Abbrechen</button>
+        <button id="bezahlen-bestaetigen-btn" class="btn btn-primaer">Bestätigen</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Hinweis-Dialog (Internet, Bestätigungen usw.) -->
+  <div id="hinweis-overlay" class="overlay versteckt">
+    <div class="modal">
+      <h2 id="hinweis-titel"></h2>
+      <p id="hinweis-text"></p>
+      <div class="aktionen" id="hinweis-aktionen">
+        <button id="hinweis-ok-btn" class="btn btn-primaer">OK</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
