@@ -33,6 +33,7 @@
       <button id="update-pruefen-btn" class="btn">Nach Updates suchen</button>
       <span id="benutzer-label" style="display:none; font-weight:700;"></span>
       <button id="abmelden-btn" class="btn" style="display:none;">Abmelden</button>
+      <button id="hilfe-btn" class="btn">Hilfe</button>
       <button id="beenden-btn" class="btn btn-beenden">Beenden</button>
     </header>
 
@@ -301,6 +302,74 @@
       <p id="hinweis-text"></p>
       <div class="aktionen" id="hinweis-aktionen">
         <button id="hinweis-ok-btn" class="btn btn-primaer">OK</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Hilfe-Dialog (Kurzanleitung Tagesgeschäft) -->
+  <div id="hilfe-overlay" class="overlay versteckt">
+    <div class="modal hilfe-modal">
+      <h2>Hilfe</h2>
+      <div class="hilfe-inhalt">
+        <h3>Anmeldung</h3>
+        <p>Die App ist gesperrt, bis man sich mit dem eigenen Namen und PIN anmeldet
+        – oben rechts zeigt der Name an, wer gerade aktiv ist. Über
+        <b>„Abmelden“</b> kehrt man zur Anmeldung zurück, z.&nbsp;B. beim Wechsel
+        der Person an der Kasse. Es gibt bewusst keine automatische Abmeldung
+        nach Inaktivität.</p>
+
+        <h3>Verkauf</h3>
+        <p>Ein Antippen einer Produktkachel bucht sofort 1 Stück in den
+        Warenkorb, nochmal antippen bucht ein weiteres Stück. Die Menge einer
+        Warenkorb-Zeile lässt sich auch direkt über die <b>+/−</b>-Knöpfe
+        ändern, das Papierkorb-Symbol entfernt eine ganze Zeile. Der Knopf
+        <b>„Helferpreis“</b> gilt jeweils nur für den nächsten angetippten
+        Artikel. Beim <b>Bezahlen</b> ist das Feld „Gegeben“ bewusst leer –
+        der erhaltene Betrag muss aktiv eingetippt werden, das Rückgeld wird
+        automatisch berechnet.</p>
+
+        <h3>Storno</h3>
+        <p>Im Reiter <b>„Stornieren“</b> stehen die letzten Kassiervorgänge –
+        „Stornieren“ bucht eine Gegenbuchung zum ausgewählten Vorgang
+        (der Vorgang bleibt sichtbar, wird aber als „storniert“ markiert statt
+        gelöscht). Ein bereits stornierter Vorgang lässt sich nicht ein
+        zweites Mal stornieren.</p>
+
+        <h3>Kassensturz</h3>
+        <p>Im Reiter <b>„Kassensturz“</b> wird das tatsächlich gezählte
+        Bargeld der aktuell ausgewählten Kasse erfasst und mit dem erwarteten
+        Betrag (Soll) verglichen. Der <b>„Startbetrag für nächste Runde“</b>
+        bleibt als Wechselgeld in der Kasse, der Rest gilt als entnommen. Die
+        Historie darunter zeigt vergangene Kassenstürze.</p>
+
+        <h3>Pfand &amp; Pfandrückgabe</h3>
+        <p>Pfandpflichtige Getränke buchen das Pfand automatisch mit, wenn sie
+        in den Warenkorb gelegt werden. Der rote Knopf
+        <b>„Pfand zurückgeben (2,00&nbsp;€)“</b> im Verkauf bucht mit einem
+        einzigen Antippen sofort eine pauschale Pfandrückgabe – es muss dafür
+        keine Flasche extra ausgewählt werden.</p>
+
+        <h3>Schiedsrichter-Auszahlungen</h3>
+        <p>Im Reiter <b>„Schiedsrichter“</b> werden Bar-Auszahlungen an
+        Schiedsrichter aus der aktuell ausgewählten Kasse erfasst. Das
+        mindert automatisch das Bargeld beim nächsten Kassensturz, zählt aber
+        nicht als Wareneinsatz.</p>
+
+        <h3>Bargeld einzahlen</h3>
+        <p>Im Reiter <b>„Einzahlen“</b> lässt sich zusätzliches Bargeld in die
+        aktive Kasse einlegen (z.&nbsp;B. Wechselgeld-Nachschub oder ein
+        Vorschuss für den Wareneinkauf). Das erhöht das Bargeld in der Kasse
+        und wird beim nächsten Kassensturz automatisch berücksichtigt.</p>
+
+        <h3>Sync &amp; Kasse wechseln</h3>
+        <p>Die App synchronisiert automatisch im Hintergrund mit der
+        zentralen Datenbank – <b>„Sync“</b> stößt das auch manuell an. Ohne
+        Internet funktioniert das Kassieren trotzdem normal weiter, es wird
+        beim nächsten Mal nachgeholt. Über die Auswahl <b>„Aktive Kasse“</b>
+        oben lässt sich zwischen Jugend- und Seniorenkasse umschalten.</p>
+      </div>
+      <div class="aktionen">
+        <button id="hilfe-schliessen-btn" class="btn btn-primaer">Schließen</button>
       </div>
     </div>
   </div>

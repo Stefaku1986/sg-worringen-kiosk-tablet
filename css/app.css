@@ -451,6 +451,29 @@ select.betrag {
   margin-top: 16px;
 }
 
+/* Hilfe-Dialog: breiter und scrollbar, da deutlich mehr Text als die
+   uebrigen (kurzen) Modals. */
+.modal.hilfe-modal {
+  max-width: 640px;
+}
+.hilfe-inhalt {
+  max-height: 65vh;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+.hilfe-inhalt h3 {
+  color: var(--blau-dunkel);
+  font-size: 16px;
+  margin: 16px 0 4px 0;
+}
+.hilfe-inhalt h3:first-child {
+  margin-top: 0;
+}
+.hilfe-inhalt p {
+  margin: 0 0 4px 0;
+  line-height: 1.4;
+}
+
 .hinweis {
   color: #666;
   font-size: 14px;

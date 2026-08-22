@@ -24,6 +24,7 @@ const updateStatusEl = el("update-status");
 const updatePruefenBtn = el("update-pruefen-btn");
 const benutzerLabel = el("benutzer-label");
 const abmeldenBtn = el("abmelden-btn");
+const hilfeBtn = el("hilfe-btn");
 const beendenBtn = el("beenden-btn");
 const tabsEl = el("tabs");
 const tabVerkauf = el("tab-verkauf");
@@ -129,6 +130,9 @@ const hinweisTitel = el("hinweis-titel");
 const hinweisText = el("hinweis-text");
 const hinweisAktionen = el("hinweis-aktionen");
 
+const hilfeOverlay = el("hilfe-overlay");
+const hilfeSchliessenBtn = el("hilfe-schliessen-btn");
+
 const KATEGORIE_LABEL = { Getraenk: "Getränke", Speise: "Speisen" };
 const KASSE_LABEL = { Jugend: "Jugendkasse", Senioren: "Seniorenkasse" };
 const WOCHENTAG_LABEL = { 1: "Montag", 2: "Dienstag", 3: "Mittwoch", 4: "Donnerstag", 5: "Freitag", 6: "Samstag", 7: "Sonntag" };
@@ -195,6 +199,18 @@ function zeigeBestaetigung(titel, text, jaText = "Ja") {
     hinweisAktionen.appendChild(jaBtn);
     hinweisOverlay.classList.remove("versteckt");
   });
+}
+
+// ---------------------------------------------------------------------
+// Hilfe-Dialog (statische Kurzanleitung, siehe index.html #hilfe-overlay)
+// ---------------------------------------------------------------------
+
+function hilfeOeffnen() {
+  hilfeOverlay.classList.remove("versteckt");
+}
+
+function hilfeSchliessen() {
+  hilfeOverlay.classList.add("versteckt");
 }
 
 // ---------------------------------------------------------------------
@@ -1375,6 +1391,8 @@ function beendenAusfuehren() {
 function wireEvents() {
   pinZurueckBtn.onclick = pinEingabeVerlassen;
   abmeldenBtn.onclick = abmelden;
+  hilfeBtn.onclick = hilfeOeffnen;
+  hilfeSchliessenBtn.onclick = hilfeSchliessen;
   syncJetztBtn.onclick = syncManuellAusloesen;
   updatePruefenBtn.onclick = updateButtonGeklickt;
   beendenBtn.onclick = appBeenden;
@@ -1423,6 +1441,9 @@ function wireEvents() {
   });
   bezahlenOverlay.addEventListener("click", (ev) => {
     if (ev.target === bezahlenOverlay) bezahlenSchliessen();
+  });
+  hilfeOverlay.addEventListener("click", (ev) => {
+    if (ev.target === hilfeOverlay) hilfeSchliessen();
   });
 }
 
