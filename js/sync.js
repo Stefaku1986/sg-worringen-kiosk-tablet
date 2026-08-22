@@ -36,6 +36,7 @@ const SCHREIBBARE_TABELLEN = [
   "kassenstuerze",
   "schiedsrichter_auszahlungen",
   "bargeld_einzahlungen",
+  "lieferanten_pfand",
   "heimspiele",
 ];
 const ALLE_TABELLEN = [...NUR_LESEN_TABELLEN, ...SCHREIBBARE_TABELLEN];

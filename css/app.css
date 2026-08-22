@@ -348,11 +348,12 @@ button.btn-primaer:active {
   background: var(--gelb);
   border: 2px solid var(--gelb-dunkel);
 }
+/* Kein Umschalter mehr, sondern eine Sofort-Aktion (ein Antippen bucht
+   direkt eine pauschale Rückgabe) - deshalb dauerhaft rot statt nur im
+   .aktiv-Zustand. */
 .pfand-rueckgabe-btn {
   width: 100%;
   margin-bottom: 10px;
-}
-.pfand-rueckgabe-btn.aktiv {
   background: var(--rot);
   border: 2px solid var(--rot);
   color: white;

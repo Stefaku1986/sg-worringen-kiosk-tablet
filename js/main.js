@@ -31,6 +31,7 @@ const tabStorno = el("tab-storno");
 const tabKassensturz = el("tab-kassensturz");
 const tabSchiedsrichter = el("tab-schiedsrichter");
 const tabEinzahlen = el("tab-einzahlen");
+const tabNachbestellung = el("tab-nachbestellung");
 const tabTermine = el("tab-termine");
 
 const kassenvorschlagBanner = el("kassenvorschlag-banner");
@@ -44,6 +45,7 @@ const stornoView = el("storno-view");
 const kassensturzView = el("kassensturz-view");
 const schiedsrichterView = el("schiedsrichter-view");
 const einzahlenView = el("einzahlen-view");
+const nachbestellungView = el("nachbestellung-view");
 const termineView = el("termine-view");
 
 const loginNutzerauswahl = el("login-nutzerauswahl");
@@ -93,6 +95,13 @@ const ezFehler = el("ez-fehler");
 const ezEinzahlenBtn = el("ez-einzahlen-btn");
 const ezTabelleBody = document.querySelector("#ez-tabelle tbody");
 
+const npBezahltFeld = el("np-bezahlt-feld");
+const npErhaltenFeld = el("np-erhalten-feld");
+const npKommentarFeld = el("np-kommentar-feld");
+const npFehler = el("np-fehler");
+const npErfassenBtn = el("np-erfassen-btn");
+const npTabelleBody = document.querySelector("#np-tabelle tbody");
+
 const tsTeamAuswahl = el("ts-team-auswahl");
 const tsDatumFeld = el("ts-datum-feld");
 const tsStartFeld = el("ts-start-feld");
@@ -127,7 +136,6 @@ let produkteCache = [];
 let benutzerCache = [];
 let warenkorb = []; // {produktId, name, menge, einzelpreis, einkaufspreis, mwstSatz, istHelferpreis, pfandBetrag, istPfandrueckgabe}
 let helferpreisAktiv = false;
-let pfandRueckgabeAktiv = false;
 let angemeldeterKandidat = null; // Benutzer, dessen PIN gerade eingegeben wird
 let pinEingabe = "";
 let aktuelleAnsicht = "login"; // 'login' | 'verkauf' | 'storno' | 'kassensturz' | 'schiedsrichter' | 'einzahlen' | 'termine'
@@ -197,6 +205,7 @@ function zeigeHauptView(name) {
     kassensturzView.style.display = "none";
     schiedsrichterView.style.display = "none";
     einzahlenView.style.display = "none";
+    nachbestellungView.style.display = "none";
     termineView.style.display = "none";
     kassenvorschlagBanner.classList.add("versteckt");
     tabsEl.style.display = "none";
@@ -220,6 +229,7 @@ function zeigeHauptView(name) {
   kassensturzView.style.display = name === "kassensturz" ? "" : "none";
   schiedsrichterView.style.display = name === "schiedsrichter" ? "" : "none";
   einzahlenView.style.display = name === "einzahlen" ? "" : "none";
+  nachbestellungView.style.display = name === "nachbestellung" ? "" : "none";
   termineView.style.display = name === "termine" ? "" : "none";
 
   tabVerkauf.classList.toggle("aktiv", name === "verkauf");
@@ -227,6 +237,7 @@ function zeigeHauptView(name) {
   tabKassensturz.classList.toggle("aktiv", name === "kassensturz");
   tabSchiedsrichter.classList.toggle("aktiv", name === "schiedsrichter");
   tabEinzahlen.classList.toggle("aktiv", name === "einzahlen");
+  tabNachbestellung.classList.toggle("aktiv", name === "nachbestellung");
   tabTermine.classList.toggle("aktiv", name === "termine");
 
   if (name === "verkauf") renderProduktGrid();
@@ -234,6 +245,7 @@ function zeigeHauptView(name) {
   if (name === "kassensturz") renderKassensturz();
   if (name === "schiedsrichter") renderSchiedsrichter();
   if (name === "einzahlen") renderEinzahlungen();
+  if (name === "nachbestellung") renderNachbestellungen();
   if (name === "termine") renderTermine();
 }
 
@@ -321,10 +333,13 @@ async function pinBestaetigen() {
 function nachAnmeldungAnzeigen() {
   const benutzer = session.getAktuellerBenutzer();
   benutzerLabel.textContent = benutzer.name;
+  // "Nachbestellungen" (Lieferanten-Pfand) ist bewusst nur fuer
+  // Administratoren sichtbar - analog zu den Admin-only-Reitern der
+  // Windows-App (siehe main_window.py, _admin_sichtbarkeit_anwenden).
+  tabNachbestellung.style.display = benutzer.ist_admin ? "" : "none";
   kasseAuswahl.value = session.getAktiveKasse();
   warenkorb = [];
   helferpreisAktiv = false;
-  pfandRueckgabeAktiv = false;
   abgelehnteKassenvorschlaege = new Set();
   zeigeHauptView("verkauf");
   pruefeKassenvorschlag();
@@ -334,7 +349,6 @@ function abmelden() {
   session.abmelden();
   warenkorb = [];
   helferpreisAktiv = false;
-  pfandRueckgabeAktiv = false;
   renderLoginNutzer();
   zeigeHauptView("login");
 }
@@ -407,13 +421,7 @@ function renderProduktGrid() {
         pfandzeile.textContent = `+${euro(produkt.pfand_betrag)} Pfand`;
         kachel.appendChild(pfandzeile);
       }
-      kachel.onclick = () => {
-        if (pfandRueckgabeAktiv) {
-          pfandRueckgabeHinzufuegen(produkt);
-        } else {
-          warenkorbHinzufuegen(produkt);
-        }
-      };
+      kachel.onclick = () => warenkorbHinzufuegen(produkt);
       produktGrid.appendChild(kachel);
     }
   }
@@ -445,21 +453,25 @@ function warenkorbHinzufuegen(produkt) {
   renderWarenkorb();
 }
 
-// "Pfand zurueckgeben": Gegenstueck zu warenkorbHinzufuegen fuer
-// zurueckgebrachtes Leergut. Bucht eine eigenstaendige Warenkorb-Position
-// mit einzelpreis 0 und dem NEGATIVEN Pfandbetrag des Produkts (siehe
-// repo.js kassiervorgangAbschliessen: mindert den Gesamtbetrag automatisch
-// und bucht bewusst keinen Warenausgang). Wie der Helferpreis-Knopf schaltet
-// sich der Umschalter nach einem Tastendruck automatisch wieder aus - bei
-// mehreren zurueckgebrachten Flaschensorten also erneut antippen.
-function pfandRueckgabeHinzufuegen(produkt) {
-  pfandRueckgabeAktiv = false;
-  pfandRueckgabeBtn.classList.remove("aktiv");
-  if (!produkt.pfand_betrag) {
+// "Pfand zurueckgeben": mit einem einzigen Antippen wird sofort eine
+// pauschale Rueckgabe (immer 2,00 EUR, unabhaengig von der Flasche) als
+// eigenstaendige Warenkorb-Position mit einzelpreis 0 und negativem
+// Pfandbetrag gebucht - ueber das feste Pseudo-Produkt
+// PFAND_RUECKGABE_PRODUKT_ID (siehe config.js), damit keine Flasche mehr
+// ausgewaehlt werden muss (siehe repo.js kassiervorgangAbschliessen:
+// mindert den Gesamtbetrag automatisch und bucht bewusst keinen
+// Warenausgang). Erneutes Antippen erhoeht einfach die Menge.
+async function pfandRueckgabeKlick() {
+  const produkt = await repo.pfandPauschalProdukt();
+  if (!produkt) {
     zeigeHinweis(
-      "Kein Pfand hinterlegt",
-      `Für "${produkt.name}" ist kein Pfandbetrag hinterlegt, es gibt daher nichts zurückzugeben.`
+      "Noch nicht synchronisiert",
+      "Das Pfandrückgabe-Pseudo-Produkt ist auf diesem Tablet noch nicht vorhanden. Bitte einmal synchronisieren und erneut versuchen."
     );
+    return;
+  }
+  if (!produkt.pfand_betrag) {
+    zeigeHinweis("Kein Pfandbetrag hinterlegt", "Für die Pfandrückgabe ist aktuell kein Betrag hinterlegt.");
     return;
   }
   const bestehend = warenkorb.find((z) => z.produktId === produkt.id && z.istPfandrueckgabe);
@@ -490,7 +502,7 @@ function renderWarenkorb() {
     const name = document.createElement("span");
     name.className = "name";
     if (zeile.istPfandrueckgabe) {
-      name.textContent = `Pfand zurück: ${zeile.name} (${euro(zeile.pfandBetrag)})`;
+      name.textContent = `Pfand zurückgegeben (${euro(zeile.pfandBetrag)})`;
       name.style.color = "var(--rot)";
     } else {
       const pfandHinweis = zeile.pfandBetrag ? ` +${euro(zeile.pfandBetrag)} Pfand` : "";
@@ -586,9 +598,7 @@ async function bezahlenBestaetigen() {
   }
   warenkorb = [];
   helferpreisAktiv = false;
-  pfandRueckgabeAktiv = false;
   helferpreisBtn.classList.remove("aktiv");
-  pfandRueckgabeBtn.classList.remove("aktiv");
   renderWarenkorb();
   bezahlenSchliessen();
 }
@@ -913,6 +923,90 @@ async function bargeldEinzahlen() {
 }
 
 // ---------------------------------------------------------------------
+// Lieferanten-Pfand (Nachbestellungen) - nur fuer Administratoren. Anders
+// als Bargeld-Einzahlungen nicht an eine Kasse gebunden (siehe repo.js).
+// ---------------------------------------------------------------------
+
+async function renderNachbestellungen() {
+  npFehler.textContent = "";
+
+  const alle = await repo.letzteLieferantenPfandEintraege(500);
+  const stornierteIds = new Set(alle.filter((e) => e.storno_von).map((e) => e.storno_von));
+  const anzeige = alle.slice(0, 50);
+
+  npTabelleBody.innerHTML = "";
+  for (const eintrag of anzeige) {
+    const tr = document.createElement("tr");
+    let status = "Aktiv";
+    if (eintrag.storno_von) status = "Storno";
+    else if (stornierteIds.has(eintrag.id)) status = "Storniert";
+    if (status !== "Aktiv") tr.classList.add("storniert");
+
+    const zellen = [
+      formatDatumUhrzeit(eintrag.datum),
+      euro(eintrag.bezahlt),
+      euro(eintrag.erhalten),
+      status,
+    ];
+    for (const wert of zellen) {
+      const td = document.createElement("td");
+      td.textContent = wert;
+      tr.appendChild(td);
+    }
+
+    const tdAktion = document.createElement("td");
+    if (status === "Aktiv") {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "btn";
+      btn.textContent = "Stornieren";
+      btn.onclick = async () => {
+        const ok = await zeigeBestaetigung(
+          "Nachbestellung stornieren?",
+          `Die Nachbestellung vom ${formatDatumUhrzeit(eintrag.datum)} (bezahlt: ${euro(eintrag.bezahlt)}, ` +
+            `zurückerhalten: ${euro(eintrag.erhalten)}) wird storniert. Das kann nicht rückgängig gemacht werden.`,
+          "Stornieren"
+        );
+        if (!ok) return;
+        const benutzer = session.getAktuellerBenutzer();
+        try {
+          await repo.lieferantenPfandStornieren(eintrag.id, benutzer.name);
+        } catch (exc) {
+          zeigeHinweis("Fehler beim Stornieren", exc.message ?? String(exc));
+          return;
+        }
+        renderNachbestellungen();
+      };
+      tdAktion.appendChild(btn);
+    }
+    tr.appendChild(tdAktion);
+    npTabelleBody.appendChild(tr);
+  }
+}
+
+async function nachbestellungErfassen() {
+  const bezahlt = parseFloat(npBezahltFeld.value) || 0;
+  const erhalten = parseFloat(npErhaltenFeld.value) || 0;
+  const benutzer = session.getAktuellerBenutzer();
+  try {
+    await repo.lieferantenPfandErfassen(
+      bezahlt,
+      erhalten,
+      npKommentarFeld.value.trim(),
+      benutzer.name
+    );
+  } catch (exc) {
+    npFehler.textContent = exc.message ?? String(exc);
+    return;
+  }
+  npBezahltFeld.value = "";
+  npErhaltenFeld.value = "";
+  npKommentarFeld.value = "";
+  npFehler.textContent = "";
+  renderNachbestellungen();
+}
+
+// ---------------------------------------------------------------------
 // Termine (Heimspiele eintragen + Trainingsplan anzeigen)
 // ---------------------------------------------------------------------
 
@@ -1199,9 +1293,11 @@ function wireEvents() {
   tabKassensturz.onclick = () => zeigeHauptView("kassensturz");
   tabSchiedsrichter.onclick = () => zeigeHauptView("schiedsrichter");
   tabEinzahlen.onclick = () => zeigeHauptView("einzahlen");
+  tabNachbestellung.onclick = () => zeigeHauptView("nachbestellung");
   tabTermine.onclick = () => zeigeHauptView("termine");
   srAuszahlenBtn.onclick = schiedsrichterAuszahlen;
   ezEinzahlenBtn.onclick = bargeldEinzahlen;
+  npErfassenBtn.onclick = nachbestellungErfassen;
   tsEintragenBtn.onclick = heimspielEintragen;
 
   kassenvorschlagUebernehmenBtn.onclick = kassenvorschlagUebernehmen;
@@ -1210,20 +1306,11 @@ function wireEvents() {
   helferpreisBtn.onclick = () => {
     helferpreisAktiv = !helferpreisAktiv;
     helferpreisBtn.classList.toggle("aktiv", helferpreisAktiv);
-    if (helferpreisAktiv) {
-      pfandRueckgabeAktiv = false;
-      pfandRueckgabeBtn.classList.remove("aktiv");
-    }
   };
 
-  pfandRueckgabeBtn.onclick = () => {
-    pfandRueckgabeAktiv = !pfandRueckgabeAktiv;
-    pfandRueckgabeBtn.classList.toggle("aktiv", pfandRueckgabeAktiv);
-    if (pfandRueckgabeAktiv) {
-      helferpreisAktiv = false;
-      helferpreisBtn.classList.remove("aktiv");
-    }
-  };
+  // Kein Umschalter mehr: ein Antippen bucht sofort eine pauschale
+  // Pfandrückgabe (siehe pfandRueckgabeKlick).
+  pfandRueckgabeBtn.onclick = () => pfandRueckgabeKlick();
 
   bezahlenBtn.onclick = bezahlenOeffnen;
   bezahlenAbbrechenBtn.onclick = bezahlenSchliessen;

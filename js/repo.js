@@ -15,7 +15,7 @@
 // Vorgang an statt den Original-Vorgang zu veraendern.
 
 import { getAll, get, put, geraetId, jetzt, neueId } from "./db.js";
-import { GERAET_NAME } from "./config.js";
+import { GERAET_NAME, PFAND_RUECKGABE_PRODUKT_ID } from "./config.js";
 import { rund2 } from "./format.js";
 import { pinPruefen } from "./auth.js";
 
@@ -27,6 +27,13 @@ export async function listeProdukte(nurAktive = true) {
   const alle = await getAll("produkte");
   const gefiltert = nurAktive ? alle.filter((p) => p.aktiv) : alle;
   return gefiltert.sort((a, b) => a.name.localeCompare(b.name, "de"));
+}
+
+// Das feste Pseudo-Produkt fuer die Ein-Klick-Pfandrückgabe (siehe
+// PFAND_RUECKGABE_PRODUKT_ID in config.js). undefined, falls es lokal noch
+// nicht synchronisiert wurde.
+export async function pfandPauschalProdukt() {
+  return get("produkte", PFAND_RUECKGABE_PRODUKT_ID);
 }
 
 export async function listeBenutzer(nurAktive = true) {
@@ -358,6 +365,76 @@ async function bargeldEinzahlungenSumme(veranstaltung, seit) {
     .filter((e) => e.veranstaltung === veranstaltung && e.datum > seit)
     .reduce((s, e) => s + e.betrag, 0);
   return rund2(summe);
+}
+
+// ---------------------------------------------------------------------
+// Lieferanten-Pfand (Nachbestellungen) - Pendant zu den entsprechenden
+// repository.py-Funktionen. Pfand, das beim Nachbestellen von Getraenken
+// beim Haendler bezahlt bzw. von ihm zurueckerhalten wird - bewusst
+// getrennt vom Kunden-Pfand am Kiosk und ohne Kassenzuordnung (anders als
+// bargeld_einzahlungen), da es nicht Teil des Kassenbestands ist. Nur fuer
+// Administratoren nutzbar (siehe main.js). Wie Bargeld-Einzahlungen ein
+// unveraenderliches Ereignis - eine Korrektur erfolgt ausschliesslich per
+// Storno, nie durch Aendern/Loeschen.
+// ---------------------------------------------------------------------
+
+export async function lieferantenPfandErfassen(bezahlt, erhalten, kommentar, benutzerName) {
+  bezahlt = rund2(bezahlt || 0);
+  erhalten = rund2(erhalten || 0);
+  if (bezahlt === 0 && erhalten === 0) {
+    throw new Error("Bitte mindestens einen der beiden Beträge angeben.");
+  }
+  const id = neueId();
+  const gid = await geraetId();
+  await put("lieferanten_pfand", {
+    id,
+    datum: jetzt(),
+    bezahlt,
+    erhalten,
+    kommentar: kommentar || null,
+    storno_von: null,
+    rechner: GERAET_NAME,
+    geraet_id: gid,
+    synced: false,
+    synced_at: null,
+    benutzer: benutzerName,
+  });
+  return id;
+}
+
+export async function letzteLieferantenPfandEintraege(limit = 30) {
+  const alle = await getAll("lieferanten_pfand");
+  return alle.sort((a, b) => (a.datum < b.datum ? 1 : -1)).slice(0, limit);
+}
+
+export async function lieferantenPfandIstStorniert(eintragId) {
+  const alle = await getAll("lieferanten_pfand");
+  return alle.some((e) => e.storno_von === eintragId);
+}
+
+export async function lieferantenPfandStornieren(eintragId, benutzerName, kommentar = null) {
+  const eintrag = await get("lieferanten_pfand", eintragId);
+  if (!eintrag) throw new Error("Eintrag nicht gefunden.");
+  if (eintrag.storno_von) throw new Error("Ein Storno-Eintrag kann nicht erneut storniert werden.");
+  if (await lieferantenPfandIstStorniert(eintragId)) {
+    throw new Error("Dieser Eintrag wurde bereits storniert.");
+  }
+  const stornoId = neueId();
+  const gid = await geraetId();
+  await put("lieferanten_pfand", {
+    id: stornoId,
+    datum: jetzt(),
+    bezahlt: -eintrag.bezahlt,
+    erhalten: -eintrag.erhalten,
+    kommentar: kommentar || `Storno zu Nachbestellung ${eintragId}`,
+    storno_von: eintragId,
+    rechner: GERAET_NAME,
+    geraet_id: gid,
+    synced: false,
+    synced_at: null,
+    benutzer: benutzerName,
+  });
+  return stornoId;
 }
 
 // ---------------------------------------------------------------------

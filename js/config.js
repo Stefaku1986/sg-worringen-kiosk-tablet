@@ -14,7 +14,15 @@ export const SUPABASE_ANON_KEY = "sb_publishable_UGRAXILrHUkfckecBNXLrQ_6Mgrq_sQ
 // analog zur Fenstertitel-Versionsanzeige der Windows-App (kiosk/__version__.py).
 // Bei sichtbaren Aenderungen an der Tablet-App bitte erhoehen (z.B. 1.1.0
 // fuer neue Funktionen, 1.0.1 fuer reine Bugfixes).
-export const APP_VERSION = "1.3.0";
+export const APP_VERSION = "1.5.0";
+
+// Feste ID eines einzigen, bewusst deaktivierten Pseudo-Produkts
+// "Pfandrückgabe (pauschal)" (pfand_betrag = 2,00 €), einmalig direkt in
+// Supabase angelegt und dadurch identisch auf Windows und Tablet vorhanden
+// (siehe kiosk/repository.py PFAND_RUECKGABE_PRODUKT_ID). Der
+// "Pfand zurückgeben"-Knopf bucht damit ab Version 1.4.0 sofort eine
+// pauschale Rückgabe, ohne dass zuvor eine Flasche ausgewaehlt werden muss.
+export const PFAND_RUECKGABE_PRODUKT_ID = "381da34f-d563-45f5-ad65-7b4e1b0c6877";
 
 // Wie am Rechner: die Kassen, zwischen denen umgeschaltet werden kann.
 export const VERANSTALTUNGEN = ["Jugend", "Senioren"];

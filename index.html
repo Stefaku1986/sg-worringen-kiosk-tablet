@@ -42,6 +42,7 @@
       <button id="tab-kassensturz">Kassensturz</button>
       <button id="tab-schiedsrichter">Schiedsrichter</button>
       <button id="tab-einzahlen">Einzahlen</button>
+      <button id="tab-nachbestellung" style="display:none;">Nachbestellungen</button>
       <button id="tab-termine">Termine</button>
     </nav>
 
@@ -79,7 +80,7 @@
         <div id="produkt-grid"></div>
         <div id="warenkorb-spalte">
           <button id="helferpreis-btn" class="btn helferpreis-btn">Helferpreis (für den nächsten Artikel)</button>
-          <button id="pfand-rueckgabe-btn" class="btn pfand-rueckgabe-btn">Pfand zurückgeben (für den nächsten Artikel)</button>
+          <button id="pfand-rueckgabe-btn" class="btn pfand-rueckgabe-btn">Pfand zurückgeben (2,00 €)</button>
           <div id="warenkorb-liste"></div>
           <div id="summe">Summe: 0,00 €</div>
           <button id="bezahlen-btn" class="btn btn-primaer">Bezahlen</button>
@@ -180,6 +181,37 @@
           <table class="liste" id="ez-tabelle">
             <thead>
               <tr><th>Datum</th><th>Betrag</th><th>Kommentar</th><th>Status</th><th></th></tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Nachbestellungen (Lieferanten-Pfand) - nur fuer Administratoren -->
+      <section id="nachbestellung-view" style="display:none;">
+        <div class="karte" style="max-width:480px;">
+          <h2 style="margin-top:0; color:var(--blau-dunkel);">Nachbestellung erfassen</h2>
+          <p class="hinweis">
+            Pfand, das beim Nachbestellen von Getränken beim Händler bezahlt bzw. von ihm
+            zurückerhalten wird (Leergut-Rückgabe an den Großhändler) – getrennt vom
+            Kunden-Pfand am Kiosk. Die Produkte/Mengen selbst weiterhin über die Windows-App
+            ("Warenwirtschaft") erfassen.
+          </p>
+          <label><b>Pfand bezahlt:</b></label>
+          <input type="number" inputmode="decimal" step="0.01" class="betrag" id="np-bezahlt-feld" />
+          <label><b>Pfand zurückerhalten:</b></label>
+          <input type="number" inputmode="decimal" step="0.01" class="betrag" id="np-erhalten-feld" />
+          <label><b>Kommentar (optional):</b></label>
+          <input type="text" class="betrag" id="np-kommentar-feld" placeholder="z.B. Lieferant/Anlass" />
+          <div id="np-fehler" class="pin-fehler"></div>
+          <button id="np-erfassen-btn" class="btn btn-primaer" style="width:100%;">Nachbestellung erfassen</button>
+        </div>
+
+        <div class="karte">
+          <h2 style="margin-top:0; color:var(--blau-dunkel);">Letzte Nachbestellungen</h2>
+          <table class="liste" id="np-tabelle">
+            <thead>
+              <tr><th>Datum</th><th>Bezahlt</th><th>Erhalten</th><th>Status</th><th></th></tr>
             </thead>
             <tbody></tbody>
           </table>
