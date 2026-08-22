@@ -524,7 +524,10 @@ function warenkorbHinzufuegen(produkt) {
       einkaufspreis: produkt.einkaufspreis,
       mwstSatz: produkt.mwst_satz,
       istHelferpreis: istHelfer,
-      pfandBetrag: produkt.pfand_betrag || 0,
+      // Runde 29: Helferpreis bedeutet kein Pfand - Helfer im Dienst
+      // zahlen fuer ihr eigenes Getraenk keinen Pfandbetrag, unabhaengig
+      // davon, ob das Produkt normalerweise pfandpflichtig ist.
+      pfandBetrag: istHelfer ? 0 : produkt.pfand_betrag || 0,
       istPfandrueckgabe: false,
     });
   }
