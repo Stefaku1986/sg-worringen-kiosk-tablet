@@ -480,8 +480,10 @@ function renderProduktGrid() {
       kachel.type = "button";
       kachel.className = "produkt-kachel";
       const name = document.createElement("div");
+      name.className = "produkt-kachel-name";
       name.textContent = produkt.name;
       const preis = document.createElement("div");
+      preis.className = "produkt-kachel-preis";
       preis.textContent = euro(produkt.verkaufspreis);
       kachel.appendChild(name);
       kachel.appendChild(preis);
