@@ -109,10 +109,16 @@ const srKasseName = el("sr-kasse-name");
 const srMannschaftFeld = el("sr-mannschaft-feld");
 const srNameFeld = el("sr-name-feld");
 const srBetragFeld = el("sr-betrag-feld");
+const srKostenlosProduktFeld = el("sr-kostenlos-produkt-feld");
+const srKostenlosMengeFeld = el("sr-kostenlos-menge-feld");
 const srKommentarFeld = el("sr-kommentar-feld");
 const srFehler = el("sr-fehler");
 const srAuszahlenBtn = el("sr-auszahlen-btn");
 const srTabelleBody = document.querySelector("#sr-tabelle tbody");
+
+srKostenlosProduktFeld.onchange = () => {
+  srKostenlosMengeFeld.disabled = !srKostenlosProduktFeld.value;
+};
 
 const ezKasseName = el("ez-kasse-name");
 const ezBetragFeld = el("ez-betrag-feld");
@@ -931,9 +937,25 @@ async function renderSchiedsrichter() {
   srKasseName.textContent = KASSE_LABEL[aktiveKasse] ?? aktiveKasse;
   srFehler.textContent = "";
 
+  // Runde 33: Produkt-Auswahl fuer kostenlose Artikel (z.B. Wasser) frisch
+  // befuellen - inaktive Produkte werden hier bewusst nicht angeboten
+  // (nur fuer die Anzeige/den Namen aelterer Auszahlungen unten relevant).
+  const produkte = await repo.listeProdukte();
+  const bisherigeAuswahl = srKostenlosProduktFeld.value;
+  srKostenlosProduktFeld.innerHTML = '<option value="">– kein kostenloser Artikel –</option>';
+  for (const p of produkte) {
+    const option = document.createElement("option");
+    option.value = p.id;
+    option.textContent = p.name;
+    srKostenlosProduktFeld.appendChild(option);
+  }
+  srKostenlosProduktFeld.value = bisherigeAuswahl;
+  srKostenlosMengeFeld.disabled = !srKostenlosProduktFeld.value;
+
   const alle = await repo.letzteSchiedsrichterAuszahlungen(500);
   const stornierteIds = new Set(alle.filter((a) => a.storno_von).map((a) => a.storno_von));
   const anzeige = alle.filter((a) => a.veranstaltung === aktiveKasse).slice(0, 50);
+  const produktNamen = new Map((await repo.listeProdukte(false)).map((p) => [p.id, p.name]));
 
   srTabelleBody.innerHTML = "";
   for (const auszahlung of anzeige) {
@@ -943,11 +965,18 @@ async function renderSchiedsrichter() {
     else if (stornierteIds.has(auszahlung.id)) status = "Storniert";
     if (status !== "Aktiv") tr.classList.add("storniert");
 
+    let kostenlosText = "–";
+    if (auszahlung.kostenlos_produkt_id && auszahlung.kostenlos_menge) {
+      const name = produktNamen.get(auszahlung.kostenlos_produkt_id) ?? "?";
+      kostenlosText = `${name} x${auszahlung.kostenlos_menge}`;
+    }
+
     const zellen = [
       formatDatumUhrzeit(auszahlung.datum),
       auszahlung.mannschaft || "–",
       auszahlung.schiedsrichter_name || "–",
       euro(auszahlung.betrag, true),
+      kostenlosText,
       status,
     ];
     for (const wert of zellen) {
@@ -986,9 +1015,20 @@ async function renderSchiedsrichter() {
 }
 
 async function schiedsrichterAuszahlen() {
-  const betrag = parseFloat(srBetragFeld.value);
-  if (isNaN(betrag) || betrag <= 0) {
-    srFehler.textContent = "Bitte einen gültigen Betrag größer als 0 eingeben.";
+  const betragEingabe = srBetragFeld.value.trim();
+  const betrag = betragEingabe === "" ? 0 : parseFloat(betragEingabe);
+  if (isNaN(betrag) || betrag < 0) {
+    srFehler.textContent = "Bitte einen gültigen Betrag (0 oder größer) eingeben.";
+    return;
+  }
+  const kostenlosProduktId = srKostenlosProduktFeld.value || null;
+  const kostenlosMenge = kostenlosProduktId ? parseInt(srKostenlosMengeFeld.value, 10) : null;
+  if (kostenlosProduktId && (isNaN(kostenlosMenge) || kostenlosMenge <= 0)) {
+    srFehler.textContent = "Bitte eine gültige Menge größer als 0 für den kostenlosen Artikel eingeben.";
+    return;
+  }
+  if (betrag <= 0 && !kostenlosProduktId) {
+    srFehler.textContent = "Bitte einen Betrag größer als 0 und/oder kostenlose Artikel angeben.";
     return;
   }
   const benutzer = session.getAktuellerBenutzer();
@@ -999,7 +1039,9 @@ async function schiedsrichterAuszahlen() {
       srMannschaftFeld.value.trim(),
       srNameFeld.value.trim(),
       srKommentarFeld.value.trim(),
-      benutzer.name
+      benutzer.name,
+      kostenlosProduktId,
+      kostenlosMenge
     );
   } catch (exc) {
     srFehler.textContent = exc.message ?? String(exc);
@@ -1008,6 +1050,9 @@ async function schiedsrichterAuszahlen() {
   srMannschaftFeld.value = "";
   srNameFeld.value = "";
   srBetragFeld.value = "";
+  srKostenlosProduktFeld.value = "";
+  srKostenlosMengeFeld.value = "1";
+  srKostenlosMengeFeld.disabled = true;
   srKommentarFeld.value = "";
   srFehler.textContent = "";
   renderSchiedsrichter();

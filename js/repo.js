@@ -240,15 +240,36 @@ export async function vorgangStornieren(vorgangId, benutzerName, kommentar = nul
 // (siehe Kassensturz-Soll oben), ist aber kein Wareneinsatz.
 // ---------------------------------------------------------------------
 
+// Runde 33: kostenlosProduktId/kostenlosMenge sind optional - kostenlose
+// Artikel (z.B. Wasser), die zusaetzlich zum/statt des Bargelds an den
+// Schiedsrichter gegeben werden. Bucht automatisch eine Bestandskorrektur
+// (typ="Korrektur", wie bei Schwund/Bruch am Rechner) ueber die bereits
+// vorhandene lagerbewegungErfassen() - eine bewusste, kleine Ausnahme von
+// der oben beschriebenen Regel "uebrige Warenwirtschaft bleibt der
+// Windows-App vorbehalten", analog zur bestehenden Ausnahme fuer
+// Nachbestellungen. Mindert NICHT das erwartete Bargeld (nur betrag tut
+// das) - eine Auszahlung kann daher aus reinem Bargeld, reinen kostenlosen
+// Artikeln (betrag=0) oder beidem bestehen; mindestens eines von beidem
+// ist erforderlich.
 export async function schiedsrichterAuszahlungErfassen(
   veranstaltung,
   betrag,
   mannschaft,
   schiedsrichterName,
   kommentar,
-  benutzerName
+  benutzerName,
+  kostenlosProduktId = null,
+  kostenlosMenge = null
 ) {
-  if (betrag == null || betrag <= 0) throw new Error("Betrag muss größer als 0 sein.");
+  const hatKostenloseArtikel = kostenlosProduktId != null && !!kostenlosMenge;
+  const betragWert = betrag == null ? 0 : betrag;
+  if (betragWert < 0) throw new Error("Betrag darf nicht negativ sein.");
+  if (hatKostenloseArtikel && kostenlosMenge <= 0) {
+    throw new Error("Menge der kostenlosen Artikel muss größer als 0 sein.");
+  }
+  if (betragWert <= 0 && !hatKostenloseArtikel) {
+    throw new Error("Bitte einen Betrag größer als 0 und/oder kostenlose Artikel angeben.");
+  }
   const id = neueId();
   const gid = await geraetId();
   await put("schiedsrichter_auszahlungen", {
@@ -257,7 +278,7 @@ export async function schiedsrichterAuszahlungErfassen(
     veranstaltung,
     mannschaft: mannschaft || null,
     schiedsrichter_name: schiedsrichterName || null,
-    betrag: rund2(betrag),
+    betrag: rund2(betragWert),
     kommentar: kommentar || null,
     storno_von: null,
     rechner: GERAET_NAME,
@@ -265,7 +286,17 @@ export async function schiedsrichterAuszahlungErfassen(
     synced: false,
     synced_at: null,
     benutzer: benutzerName,
+    kostenlos_produkt_id: hatKostenloseArtikel ? kostenlosProduktId : null,
+    kostenlos_menge: hatKostenloseArtikel ? kostenlosMenge : null,
   });
+  if (hatKostenloseArtikel) {
+    let kbKommentar = "Kostenlose Ausgabe an Schiedsrichter";
+    if (mannschaft) kbKommentar += ` (${mannschaft})`;
+    if (schiedsrichterName) kbKommentar += ` – ${schiedsrichterName}`;
+    await lagerbewegungErfassen(
+      kostenlosProduktId, "Korrektur", -kostenlosMenge, kbKommentar, benutzerName, gid
+    );
+  }
   return id;
 }
 
@@ -302,7 +333,22 @@ export async function schiedsrichterAuszahlungStornieren(auszahlungId, benutzerN
     synced: false,
     synced_at: null,
     benutzer: benutzerName,
+    // Runde 33: unveraendert uebernommen (nur fuer die Anzeige) - der
+    // tatsaechliche Bestand kommt ueber die separate Korrektur-Buchung
+    // unten zurueck.
+    kostenlos_produkt_id: auszahlung.kostenlos_produkt_id ?? null,
+    kostenlos_menge: auszahlung.kostenlos_menge ?? null,
   });
+  if (auszahlung.kostenlos_produkt_id && auszahlung.kostenlos_menge) {
+    await lagerbewegungErfassen(
+      auszahlung.kostenlos_produkt_id,
+      "Korrektur",
+      auszahlung.kostenlos_menge,
+      kommentar || `Storno zu Auszahlung ${auszahlungId} (kostenlose Artikel)`,
+      benutzerName,
+      gid
+    );
+  }
   return stornoId;
 }
 

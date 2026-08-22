@@ -156,6 +156,11 @@
           <input type="text" class="betrag" id="sr-name-feld" placeholder="Name" />
           <label><b>Betrag:</b></label>
           <input type="number" inputmode="decimal" step="0.01" class="betrag" id="sr-betrag-feld" />
+          <label><b>Kostenlose Artikel (optional):</b></label>
+          <select class="betrag" id="sr-kostenlos-produkt-feld">
+            <option value="">– kein kostenloser Artikel –</option>
+          </select>
+          <input type="number" inputmode="numeric" min="1" step="1" class="betrag" id="sr-kostenlos-menge-feld" placeholder="Menge, z.B. 2" value="1" disabled />
           <label><b>Kommentar (optional):</b></label>
           <input type="text" class="betrag" id="sr-kommentar-feld" />
           <div id="sr-fehler" class="pin-fehler"></div>
@@ -166,7 +171,7 @@
           <h2 style="margin-top:0; color:var(--blau-dunkel);">Letzte Auszahlungen</h2>
           <table class="liste" id="sr-tabelle">
             <thead>
-              <tr><th>Datum</th><th>Mannschaft</th><th>Schiedsrichter</th><th>Betrag</th><th>Status</th><th></th></tr>
+              <tr><th>Datum</th><th>Mannschaft</th><th>Schiedsrichter</th><th>Betrag</th><th>Kostenlose Artikel</th><th>Status</th><th></th></tr>
             </thead>
             <tbody></tbody>
           </table>
@@ -472,7 +477,10 @@
         <p>Im Reiter <b>„Schiedsrichter“</b> werden Bar-Auszahlungen an
         Schiedsrichter aus der aktuell ausgewählten Kasse erfasst. Das
         mindert automatisch das Bargeld beim nächsten Kassensturz, zählt aber
-        nicht als Wareneinsatz.</p>
+        nicht als Wareneinsatz. Zusätzlich (oder statt Bargeld) lässt sich ein
+        kostenloser Artikel angeben, z.&nbsp;B. Wasser × 2 – der Warenbestand
+        wird dabei automatisch reduziert. Eine Auszahlung kann dadurch auch
+        nur aus kostenlosen Artikeln ohne Bargeld bestehen (Betrag 0).</p>
 
         <h3>Bargeld einzahlen</h3>
         <p>Im Reiter <b>„Einzahlen“</b> lässt sich zusätzliches Bargeld in die
