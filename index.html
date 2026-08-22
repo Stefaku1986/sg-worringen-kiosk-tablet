@@ -43,6 +43,8 @@
       <button id="tab-kassensturz">Kassensturz</button>
       <button id="tab-schiedsrichter">Schiedsrichter</button>
       <button id="tab-einzahlen">Einzahlen</button>
+      <button id="tab-ausgaben">Ausgaben</button>
+      <button id="tab-entnahmen">Entnahmen</button>
       <button id="tab-nachbestellung" style="display:none;">Nachbestellungen</button>
       <button id="tab-termine">Termine</button>
       <button id="tab-feedback">Feedback</button>
@@ -109,7 +111,9 @@
           <div class="kennzahl-zeile"><span>Anfangsbestand</span><span id="ks-anfangsbestand"></span></div>
           <div class="kennzahl-zeile"><span>Einnahmen seit letztem Kassensturz</span><span id="ks-einnahmen"></span></div>
           <div class="kennzahl-zeile"><span>Schiedsrichter-Auszahlungen</span><span id="ks-auszahlungen"></span></div>
+          <div class="kennzahl-zeile"><span>Sonstige Ausgaben</span><span id="ks-sonstige-ausgaben"></span></div>
           <div class="kennzahl-zeile"><span>Bargeld-Einzahlungen</span><span id="ks-einzahlungen"></span></div>
+          <div class="kennzahl-zeile"><span>Bargeld-Entnahmen</span><span id="ks-entnahmen"></span></div>
           <div class="kennzahl-zeile gesamt"><span>Soll</span><span id="ks-soll"></span></div>
 
           <label><b>Tatsächlich gezählt (Ist):</b></label>
@@ -183,6 +187,65 @@
           <table class="liste" id="ez-tabelle">
             <thead>
               <tr><th>Datum</th><th>Betrag</th><th>Kommentar</th><th>Status</th><th></th></tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Sonstige Ausgaben (Runde 27) -->
+      <section id="ausgaben-view" style="display:none;">
+        <div class="karte" style="max-width:480px;">
+          <h2 style="margin-top:0; color:var(--blau-dunkel);">Sonstige Ausgabe – <span id="sa-kasse-name"></span></h2>
+          <p class="hinweis">
+            Allgemeine Kiosk-Ausgaben (z.B. Reinigungsmittel, Reparaturen, Material) aus
+            der aktiven Kasse – NICHT für Strom, dafür zahlt der Verein nicht. Mindert das
+            Bargeld in der Kasse und wird beim nächsten Kassensturz automatisch
+            berücksichtigt.
+          </p>
+          <label><b>Betrag:</b></label>
+          <input type="number" inputmode="decimal" step="0.01" class="betrag" id="sa-betrag-feld" />
+          <label><b>Beschreibung:</b></label>
+          <input type="text" class="betrag" id="sa-beschreibung-feld" placeholder="z.B. Reinigungsmittel (nicht für Strom)" />
+          <div id="sa-fehler" class="pin-fehler"></div>
+          <button id="sa-erfassen-btn" class="btn btn-primaer" style="width:100%;">Ausgabe erfassen</button>
+        </div>
+
+        <div class="karte">
+          <h2 style="margin-top:0; color:var(--blau-dunkel);">Letzte Ausgaben</h2>
+          <table class="liste" id="sa-tabelle">
+            <thead>
+              <tr><th>Datum</th><th>Beschreibung</th><th>Betrag</th><th>Status</th><th></th></tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Bargeld-Entnahmen (Runde 27) -->
+      <section id="entnahmen-view" style="display:none;">
+        <div class="karte" style="max-width:480px;">
+          <h2 style="margin-top:0; color:var(--blau-dunkel);">Bargeld-Entnahme – <span id="be-kasse-name"></span></h2>
+          <p class="hinweis">
+            Dokumentierte Bargeld-Entnahme aus der aktiven Kasse, mit Empfänger. Mindert
+            das Bargeld in der Kasse und wird beim nächsten Kassensturz automatisch
+            berücksichtigt.
+          </p>
+          <label><b>Betrag:</b></label>
+          <input type="number" inputmode="decimal" step="0.01" class="betrag" id="be-betrag-feld" />
+          <label><b>Empfänger:</b></label>
+          <input type="text" class="betrag" id="be-empfaenger-feld" placeholder="z.B. Herr Müller, Vereinskasse" />
+          <label><b>Kommentar (optional):</b></label>
+          <input type="text" class="betrag" id="be-kommentar-feld" />
+          <div id="be-fehler" class="pin-fehler"></div>
+          <button id="be-erfassen-btn" class="btn btn-primaer" style="width:100%;">Entnahme erfassen</button>
+        </div>
+
+        <div class="karte">
+          <h2 style="margin-top:0; color:var(--blau-dunkel);">Letzte Entnahmen</h2>
+          <table class="liste" id="be-tabelle">
+            <thead>
+              <tr><th>Datum</th><th>Empfänger</th><th>Betrag</th><th>Status</th><th></th></tr>
             </thead>
             <tbody></tbody>
           </table>
@@ -394,6 +457,20 @@
         Vorschuss für den Wareneinkauf). Das erhöht das Bargeld in der Kasse
         und wird beim nächsten Kassensturz automatisch berücksichtigt.</p>
 
+        <h3>Sonstige Ausgaben</h3>
+        <p>Im Reiter <b>„Ausgaben“</b> werden allgemeine Kiosk-Ausgaben aus der
+        aktiven Kasse erfasst (z.&nbsp;B. Reinigungsmittel, Reparaturen,
+        Material) – NICHT für Strom, dafür zahlt der Verein nicht. Das
+        mindert automatisch das Bargeld beim nächsten Kassensturz, zählt aber
+        nicht als Wareneinsatz.</p>
+
+        <h3>Bargeld-Entnahmen</h3>
+        <p>Im Reiter <b>„Entnahmen“</b> lässt sich dokumentieren, wer Bargeld
+        aus der aktiven Kasse erhalten hat (Pflichtfeld Empfänger). Direkt
+        nach einem Kassensturz wird zusätzlich automatisch gefragt, wer den
+        dort gezählten Überschuss erhalten hat – das ist rein informativ und
+        mindert das Kassensturz-Soll nicht zusätzlich.</p>
+
         <h3>Feedback</h3>
         <p>Im Reiter <b>„Feedback“</b> lassen sich Funktions- und
         Produktwünsche eintragen – ein offenes Ideen-Board: alle sehen alle
@@ -410,6 +487,25 @@
       </div>
       <div class="aktionen">
         <button id="hilfe-schliessen-btn" class="btn btn-primaer">Schließen</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Bargeld-Entnahme nach Kassensturz (Runde 27): fragt, wer den gezaehlten
+       Ueberschuss erhalten hat - rein informativ, siehe repo.js
+       bargeldEntnahmeErfassen (kassensturzId). -->
+  <div id="ks-entnahme-overlay" class="overlay versteckt">
+    <div class="modal">
+      <h2>Bargeld-Entnahme dokumentieren</h2>
+      <p class="hinweis" id="ks-entnahme-text"></p>
+      <label><b>Betrag:</b></label>
+      <input type="number" inputmode="decimal" step="0.01" class="betrag" id="ks-entnahme-betrag-feld" />
+      <label><b>Empfänger:</b></label>
+      <input type="text" class="betrag" id="ks-entnahme-empfaenger-feld" placeholder="z.B. Herr Müller, Vereinskasse" />
+      <div id="ks-entnahme-fehler" class="pin-fehler"></div>
+      <div class="aktionen">
+        <button id="ks-entnahme-ueberspringen-btn" class="btn">Nicht jetzt</button>
+        <button id="ks-entnahme-speichern-btn" class="btn btn-primaer">Speichern</button>
       </div>
     </div>
   </div>

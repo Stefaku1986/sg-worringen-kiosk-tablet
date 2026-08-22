@@ -32,6 +32,8 @@ const tabStorno = el("tab-storno");
 const tabKassensturz = el("tab-kassensturz");
 const tabSchiedsrichter = el("tab-schiedsrichter");
 const tabEinzahlen = el("tab-einzahlen");
+const tabAusgaben = el("tab-ausgaben");
+const tabEntnahmen = el("tab-entnahmen");
 const tabNachbestellung = el("tab-nachbestellung");
 const tabTermine = el("tab-termine");
 const tabFeedback = el("tab-feedback");
@@ -47,6 +49,8 @@ const stornoView = el("storno-view");
 const kassensturzView = el("kassensturz-view");
 const schiedsrichterView = el("schiedsrichter-view");
 const einzahlenView = el("einzahlen-view");
+const ausgabenView = el("ausgaben-view");
+const entnahmenView = el("entnahmen-view");
 const nachbestellungView = el("nachbestellung-view");
 const termineView = el("termine-view");
 const feedbackView = el("feedback-view");
@@ -74,7 +78,9 @@ const ksKasseName = el("ks-kasse-name");
 const ksAnfangsbestand = el("ks-anfangsbestand");
 const ksEinnahmen = el("ks-einnahmen");
 const ksAuszahlungen = el("ks-auszahlungen");
+const ksSonstigeAusgaben = el("ks-sonstige-ausgaben");
 const ksEinzahlungen = el("ks-einzahlungen");
+const ksEntnahmen = el("ks-entnahmen");
 const ksSoll = el("ks-soll");
 const ksGezaehltFeld = el("ks-gezaehlt-feld");
 const ksDifferenz = el("ks-differenz");
@@ -97,6 +103,29 @@ const ezKommentarFeld = el("ez-kommentar-feld");
 const ezFehler = el("ez-fehler");
 const ezEinzahlenBtn = el("ez-einzahlen-btn");
 const ezTabelleBody = document.querySelector("#ez-tabelle tbody");
+
+const saKasseName = el("sa-kasse-name");
+const saBetragFeld = el("sa-betrag-feld");
+const saBeschreibungFeld = el("sa-beschreibung-feld");
+const saFehler = el("sa-fehler");
+const saErfassenBtn = el("sa-erfassen-btn");
+const saTabelleBody = document.querySelector("#sa-tabelle tbody");
+
+const beKasseName = el("be-kasse-name");
+const beBetragFeld = el("be-betrag-feld");
+const beEmpfaengerFeld = el("be-empfaenger-feld");
+const beKommentarFeld = el("be-kommentar-feld");
+const beFehler = el("be-fehler");
+const beErfassenBtn = el("be-erfassen-btn");
+const beTabelleBody = document.querySelector("#be-tabelle tbody");
+
+const ksEntnahmeOverlay = el("ks-entnahme-overlay");
+const ksEntnahmeText = el("ks-entnahme-text");
+const ksEntnahmeBetragFeld = el("ks-entnahme-betrag-feld");
+const ksEntnahmeEmpfaengerFeld = el("ks-entnahme-empfaenger-feld");
+const ksEntnahmeFehler = el("ks-entnahme-fehler");
+const ksEntnahmeUeberspringenBtn = el("ks-entnahme-ueberspringen-btn");
+const ksEntnahmeSpeichernBtn = el("ks-entnahme-speichern-btn");
 
 const npProduktAuswahl = el("np-produkt-auswahl");
 const npProduktMengeFeld = el("np-produkt-menge-feld");
@@ -163,7 +192,7 @@ let nachbestellungPositionen = []; // {produktId, name, menge, einzelpreis (nett
 let helferpreisAktiv = false;
 let angemeldeterKandidat = null; // Benutzer, dessen PIN gerade eingegeben wird
 let pinEingabe = "";
-let aktuelleAnsicht = "login"; // 'login' | 'verkauf' | 'storno' | 'kassensturz' | 'schiedsrichter' | 'einzahlen' | 'nachbestellung' | 'termine'
+let aktuelleAnsicht = "login"; // 'login' | 'verkauf' | 'storno' | 'kassensturz' | 'schiedsrichter' | 'einzahlen' | 'ausgaben' | 'entnahmen' | 'nachbestellung' | 'termine'
 let letzterKassensturzSoll = 0;
 let vorgaengeCache = []; // fuer Storno-Ansicht
 let abgelehnteKassenvorschlaege = new Set(); // "schluessel" bereits verworfener Vorschlaege
@@ -242,6 +271,8 @@ function zeigeHauptView(name) {
     kassensturzView.style.display = "none";
     schiedsrichterView.style.display = "none";
     einzahlenView.style.display = "none";
+    ausgabenView.style.display = "none";
+    entnahmenView.style.display = "none";
     nachbestellungView.style.display = "none";
     termineView.style.display = "none";
     feedbackView.style.display = "none";
@@ -267,6 +298,8 @@ function zeigeHauptView(name) {
   kassensturzView.style.display = name === "kassensturz" ? "" : "none";
   schiedsrichterView.style.display = name === "schiedsrichter" ? "" : "none";
   einzahlenView.style.display = name === "einzahlen" ? "" : "none";
+  ausgabenView.style.display = name === "ausgaben" ? "" : "none";
+  entnahmenView.style.display = name === "entnahmen" ? "" : "none";
   nachbestellungView.style.display = name === "nachbestellung" ? "" : "none";
   termineView.style.display = name === "termine" ? "" : "none";
   feedbackView.style.display = name === "feedback" ? "" : "none";
@@ -276,6 +309,8 @@ function zeigeHauptView(name) {
   tabKassensturz.classList.toggle("aktiv", name === "kassensturz");
   tabSchiedsrichter.classList.toggle("aktiv", name === "schiedsrichter");
   tabEinzahlen.classList.toggle("aktiv", name === "einzahlen");
+  tabAusgaben.classList.toggle("aktiv", name === "ausgaben");
+  tabEntnahmen.classList.toggle("aktiv", name === "entnahmen");
   tabNachbestellung.classList.toggle("aktiv", name === "nachbestellung");
   tabTermine.classList.toggle("aktiv", name === "termine");
   tabFeedback.classList.toggle("aktiv", name === "feedback");
@@ -285,6 +320,8 @@ function zeigeHauptView(name) {
   if (name === "kassensturz") renderKassensturz();
   if (name === "schiedsrichter") renderSchiedsrichter();
   if (name === "einzahlen") renderEinzahlungen();
+  if (name === "ausgaben") renderAusgaben();
+  if (name === "entnahmen") renderEntnahmen();
   if (name === "nachbestellung") renderNachbestellungen();
   if (name === "termine") renderTermine();
   if (name === "feedback") renderFeedback();
@@ -722,7 +759,9 @@ async function renderKassensturz() {
   ksAnfangsbestand.textContent = euro(vorschau.anfangsbestand);
   ksEinnahmen.textContent = euro(vorschau.einnahmen, true);
   ksAuszahlungen.textContent = euro(vorschau.auszahlungen);
+  ksSonstigeAusgaben.textContent = euro(vorschau.sonstigeAusgaben);
   ksEinzahlungen.textContent = euro(vorschau.einzahlungen);
+  ksEntnahmen.textContent = euro(vorschau.entnahmen);
   ksSoll.textContent = euro(vorschau.soll);
 
   ksGezaehltFeld.value = "";
@@ -749,13 +788,14 @@ async function ksSpeichern() {
     zeigeHinweis("Fehlende Angabe", "Bitte den tatsächlich gezählten Betrag eingeben.");
     return;
   }
-  const naechsterStart = parseFloat(ksNaechsterStartFeld.value);
+  const naechsterStartRoh = parseFloat(ksNaechsterStartFeld.value);
+  const naechsterStart = isNaN(naechsterStartRoh) ? letzterKassensturzSoll : naechsterStartRoh;
   const benutzer = session.getAktuellerBenutzer();
   const aktiveKasse = session.getAktiveKasse();
   const ergebnis = await repo.kassensturzDurchfuehren(
     aktiveKasse,
     gezaehlt,
-    isNaN(naechsterStart) ? letzterKassensturzSoll : naechsterStart,
+    naechsterStart,
     null,
     benutzer.name
   );
@@ -764,6 +804,64 @@ async function ksSpeichern() {
     `Soll: ${euro(ergebnis.soll)}\nGezählt: ${euro(gezaehlt)}\nDifferenz: ${euro(ergebnis.differenz, true)}`
   );
   renderKassensturz();
+  renderEntnahmen();
+
+  // Runde 27: der Ueberschuss, der als Wechselgeld NICHT in der Kasse
+  // bleibt (gezaehlt - naechster Startbetrag), wird bereits ueber den
+  // Anfangsbestand-Uebertrag aus dem kuenftigen Soll ausgeschlossen - hier
+  // nur FRAGEN, ob dokumentiert werden soll, wer ihn erhalten hat (rein
+  // informativ, siehe repo.js bargeldEntnahmeErfassen/kassensturzId).
+  const ueberschuss = Math.round((gezaehlt - naechsterStart) * 100) / 100;
+  if (ueberschuss > 0) {
+    ksEntnahmeUeberschussKasse = aktiveKasse;
+    ksEntnahmeUeberschussKassensturzId = ergebnis.ksId;
+    ksEntnahmeText.textContent =
+      `Überschuss aus diesem Kassensturz: ${euro(ueberschuss)}. Soll jetzt erfasst ` +
+      "werden, wer dieses Geld erhalten hat?";
+    ksEntnahmeBetragFeld.value = ueberschuss.toFixed(2);
+    ksEntnahmeEmpfaengerFeld.value = "";
+    ksEntnahmeFehler.textContent = "";
+    ksEntnahmeOverlay.classList.remove("versteckt");
+  }
+}
+
+// Zwischenspeicher fuer den Dialog "Bargeld-Entnahme dokumentieren" (siehe
+// ksSpeichern oben und die Knopf-Handler weiter unten) - wird bei jedem
+// Kassensturz mit Ueberschuss neu gesetzt.
+let ksEntnahmeUeberschussKasse = null;
+let ksEntnahmeUeberschussKassensturzId = null;
+
+function ksEntnahmeUeberspringen() {
+  ksEntnahmeOverlay.classList.add("versteckt");
+  ksEntnahmeUeberschussKasse = null;
+  ksEntnahmeUeberschussKassensturzId = null;
+}
+
+async function ksEntnahmeSpeichern() {
+  const betrag = parseFloat(ksEntnahmeBetragFeld.value);
+  if (isNaN(betrag) || betrag <= 0) {
+    ksEntnahmeFehler.textContent = "Bitte einen gültigen Betrag größer als 0 eingeben.";
+    return;
+  }
+  const empfaenger = ksEntnahmeEmpfaengerFeld.value.trim();
+  const benutzer = session.getAktuellerBenutzer();
+  try {
+    await repo.bargeldEntnahmeErfassen(
+      ksEntnahmeUeberschussKasse,
+      betrag,
+      empfaenger,
+      null,
+      benutzer.name,
+      ksEntnahmeUeberschussKassensturzId
+    );
+  } catch (exc) {
+    ksEntnahmeFehler.textContent = exc.message ?? String(exc);
+    return;
+  }
+  ksEntnahmeOverlay.classList.add("versteckt");
+  ksEntnahmeUeberschussKasse = null;
+  ksEntnahmeUeberschussKassensturzId = null;
+  renderEntnahmen();
 }
 
 async function renderKassensturzHistorie(aktiveKasse) {
@@ -963,6 +1061,183 @@ async function bargeldEinzahlen() {
   ezKommentarFeld.value = "";
   ezFehler.textContent = "";
   renderEinzahlungen();
+}
+
+// ---------------------------------------------------------------------
+// Sonstige Ausgaben (Runde 27)
+// ---------------------------------------------------------------------
+
+async function renderAusgaben() {
+  const aktiveKasse = session.getAktiveKasse();
+  saKasseName.textContent = KASSE_LABEL[aktiveKasse] ?? aktiveKasse;
+  saFehler.textContent = "";
+
+  const alle = await repo.letzteSonstigeAusgaben(500);
+  const stornierteIds = new Set(alle.filter((a) => a.storno_von).map((a) => a.storno_von));
+  const anzeige = alle.filter((a) => a.veranstaltung === aktiveKasse).slice(0, 50);
+
+  saTabelleBody.innerHTML = "";
+  for (const ausgabe of anzeige) {
+    const tr = document.createElement("tr");
+    let status = "Aktiv";
+    if (ausgabe.storno_von) status = "Storno";
+    else if (stornierteIds.has(ausgabe.id)) status = "Storniert";
+    if (status !== "Aktiv") tr.classList.add("storniert");
+
+    const zellen = [
+      formatDatumUhrzeit(ausgabe.datum),
+      ausgabe.beschreibung || "–",
+      euro(ausgabe.betrag, true),
+      status,
+    ];
+    for (const wert of zellen) {
+      const td = document.createElement("td");
+      td.textContent = wert;
+      tr.appendChild(td);
+    }
+
+    const tdAktion = document.createElement("td");
+    if (status === "Aktiv") {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "btn";
+      btn.textContent = "Stornieren";
+      btn.onclick = async () => {
+        const ok = await zeigeBestaetigung(
+          "Ausgabe stornieren?",
+          `Die Ausgabe vom ${formatDatumUhrzeit(ausgabe.datum)} über ${euro(ausgabe.betrag)} wird storniert. Das kann nicht rückgängig gemacht werden.`,
+          "Stornieren"
+        );
+        if (!ok) return;
+        const benutzer = session.getAktuellerBenutzer();
+        try {
+          await repo.sonstigeAusgabeStornieren(ausgabe.id, benutzer.name);
+        } catch (exc) {
+          zeigeHinweis("Fehler beim Stornieren", exc.message ?? String(exc));
+          return;
+        }
+        renderAusgaben();
+      };
+      tdAktion.appendChild(btn);
+    }
+    tr.appendChild(tdAktion);
+    saTabelleBody.appendChild(tr);
+  }
+}
+
+async function ausgabeErfassen() {
+  const betrag = parseFloat(saBetragFeld.value);
+  if (isNaN(betrag) || betrag <= 0) {
+    saFehler.textContent = "Bitte einen gültigen Betrag größer als 0 eingeben.";
+    return;
+  }
+  const benutzer = session.getAktuellerBenutzer();
+  try {
+    await repo.sonstigeAusgabeErfassen(
+      session.getAktiveKasse(),
+      betrag,
+      saBeschreibungFeld.value.trim(),
+      benutzer.name
+    );
+  } catch (exc) {
+    saFehler.textContent = exc.message ?? String(exc);
+    return;
+  }
+  saBetragFeld.value = "";
+  saBeschreibungFeld.value = "";
+  saFehler.textContent = "";
+  renderAusgaben();
+}
+
+// ---------------------------------------------------------------------
+// Bargeld-Entnahmen (Runde 27)
+// ---------------------------------------------------------------------
+
+async function renderEntnahmen() {
+  const aktiveKasse = session.getAktiveKasse();
+  beKasseName.textContent = KASSE_LABEL[aktiveKasse] ?? aktiveKasse;
+  beFehler.textContent = "";
+
+  const alle = await repo.letzteBargeldEntnahmen(500);
+  const stornierteIds = new Set(alle.filter((e) => e.storno_von).map((e) => e.storno_von));
+  const anzeige = alle.filter((e) => e.veranstaltung === aktiveKasse).slice(0, 50);
+
+  beTabelleBody.innerHTML = "";
+  for (const entnahme of anzeige) {
+    const tr = document.createElement("tr");
+    let status = "Aktiv";
+    if (entnahme.storno_von) status = "Storno";
+    else if (stornierteIds.has(entnahme.id)) status = "Storniert";
+    if (status !== "Aktiv") tr.classList.add("storniert");
+
+    let empfaengerAnzeige = entnahme.empfaenger || "–";
+    if (entnahme.kassensturz_id) empfaengerAnzeige += " (aus Kassensturz)";
+
+    const zellen = [
+      formatDatumUhrzeit(entnahme.datum),
+      empfaengerAnzeige,
+      euro(entnahme.betrag, true),
+      status,
+    ];
+    for (const wert of zellen) {
+      const td = document.createElement("td");
+      td.textContent = wert;
+      tr.appendChild(td);
+    }
+
+    const tdAktion = document.createElement("td");
+    if (status === "Aktiv") {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "btn";
+      btn.textContent = "Stornieren";
+      btn.onclick = async () => {
+        const ok = await zeigeBestaetigung(
+          "Entnahme stornieren?",
+          `Die Entnahme vom ${formatDatumUhrzeit(entnahme.datum)} über ${euro(entnahme.betrag)} an ${entnahme.empfaenger} wird storniert. Das kann nicht rückgängig gemacht werden.`,
+          "Stornieren"
+        );
+        if (!ok) return;
+        const benutzer = session.getAktuellerBenutzer();
+        try {
+          await repo.bargeldEntnahmeStornieren(entnahme.id, benutzer.name);
+        } catch (exc) {
+          zeigeHinweis("Fehler beim Stornieren", exc.message ?? String(exc));
+          return;
+        }
+        renderEntnahmen();
+      };
+      tdAktion.appendChild(btn);
+    }
+    tr.appendChild(tdAktion);
+    beTabelleBody.appendChild(tr);
+  }
+}
+
+async function entnahmeErfassen() {
+  const betrag = parseFloat(beBetragFeld.value);
+  if (isNaN(betrag) || betrag <= 0) {
+    beFehler.textContent = "Bitte einen gültigen Betrag größer als 0 eingeben.";
+    return;
+  }
+  const benutzer = session.getAktuellerBenutzer();
+  try {
+    await repo.bargeldEntnahmeErfassen(
+      session.getAktiveKasse(),
+      betrag,
+      beEmpfaengerFeld.value.trim(),
+      beKommentarFeld.value.trim(),
+      benutzer.name
+    );
+  } catch (exc) {
+    beFehler.textContent = exc.message ?? String(exc);
+    return;
+  }
+  beBetragFeld.value = "";
+  beEmpfaengerFeld.value = "";
+  beKommentarFeld.value = "";
+  beFehler.textContent = "";
+  renderEntnahmen();
 }
 
 // ---------------------------------------------------------------------
@@ -1345,6 +1620,8 @@ function aktualisiereAktuelleAnsichtNachKassenwechsel() {
   if (aktuelleAnsicht === "kassensturz") renderKassensturz();
   if (aktuelleAnsicht === "schiedsrichter") renderSchiedsrichter();
   if (aktuelleAnsicht === "einzahlen") renderEinzahlungen();
+  if (aktuelleAnsicht === "ausgaben") renderAusgaben();
+  if (aktuelleAnsicht === "entnahmen") renderEntnahmen();
 }
 
 // ---------------------------------------------------------------------
@@ -1396,6 +1673,10 @@ async function nachSyncAktualisieren() {
     renderSchiedsrichter();
   } else if (aktuelleAnsicht === "einzahlen") {
     renderEinzahlungen();
+  } else if (aktuelleAnsicht === "ausgaben") {
+    renderAusgaben();
+  } else if (aktuelleAnsicht === "entnahmen") {
+    renderEntnahmen();
   } else if (aktuelleAnsicht === "nachbestellung") {
     renderNachbestellungen();
   } else if (aktuelleAnsicht === "termine") {
@@ -1511,11 +1792,17 @@ function wireEvents() {
   tabKassensturz.onclick = () => zeigeHauptView("kassensturz");
   tabSchiedsrichter.onclick = () => zeigeHauptView("schiedsrichter");
   tabEinzahlen.onclick = () => zeigeHauptView("einzahlen");
+  tabAusgaben.onclick = () => zeigeHauptView("ausgaben");
+  tabEntnahmen.onclick = () => zeigeHauptView("entnahmen");
   tabNachbestellung.onclick = () => zeigeHauptView("nachbestellung");
   tabTermine.onclick = () => zeigeHauptView("termine");
   tabFeedback.onclick = () => zeigeHauptView("feedback");
   srAuszahlenBtn.onclick = schiedsrichterAuszahlen;
   ezEinzahlenBtn.onclick = bargeldEinzahlen;
+  saErfassenBtn.onclick = ausgabeErfassen;
+  beErfassenBtn.onclick = entnahmeErfassen;
+  ksEntnahmeUeberspringenBtn.onclick = ksEntnahmeUeberspringen;
+  ksEntnahmeSpeichernBtn.onclick = ksEntnahmeSpeichern;
   npPositionHinzufuegenBtn.onclick = nachbestellungPositionHinzufuegen;
   npErfassenBtn.onclick = nachbestellungErfassen;
   tsEintragenBtn.onclick = heimspielEintragen;

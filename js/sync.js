@@ -45,6 +45,11 @@ const SCHREIBBARE_TABELLEN = [
   // vor pull" sorgt wie bei "benutzer" dafuer, dass keine Merge-Konflikte
   // entstehen.
   "feedback",
+  // Runde 27 (Buchhaltungs-Erweiterung): sonstige Kiosk-Ausgaben und
+  // dokumentierte Bargeld-Entnahmen - beide wie schiedsrichter_auszahlungen
+  // unveraenderliche Ereignisse mit Storno.
+  "sonstige_ausgaben",
+  "bargeld_entnahmen",
 ];
 const ALLE_TABELLEN = [...NUR_LESEN_TABELLEN, ...SCHREIBBARE_TABELLEN];
 

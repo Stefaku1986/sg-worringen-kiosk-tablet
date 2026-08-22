@@ -380,6 +380,174 @@ async function bargeldEinzahlungenSumme(veranstaltung, seit) {
 }
 
 // ---------------------------------------------------------------------
+// Sonstige Ausgaben - Pendant zu repository.sonstige_ausgabe_erfassen /
+// sonstige_ausgabe_stornieren (Runde 27). Allgemeine Kiosk-Ausgaben (z.B.
+// Reinigungsmittel, Reparaturen, Material) - AUSDRUECKLICH OHNE Strom,
+// dafuer zahlt der Verein nicht. Wie eine Schiedsrichter-Auszahlung ein
+// unveraenderliches Ereignis - eine Korrektur erfolgt ausschliesslich per
+// Storno, nie durch Aendern/Loeschen.
+// ---------------------------------------------------------------------
+
+export async function sonstigeAusgabeErfassen(veranstaltung, betrag, beschreibung, benutzerName) {
+  if (betrag == null || betrag <= 0) throw new Error("Betrag muss größer als 0 sein.");
+  if (!beschreibung || !beschreibung.trim()) throw new Error("Beschreibung ist erforderlich.");
+  const id = neueId();
+  const gid = await geraetId();
+  await put("sonstige_ausgaben", {
+    id,
+    datum: jetzt(),
+    veranstaltung,
+    betrag: rund2(betrag),
+    beschreibung: beschreibung.trim(),
+    storno_von: null,
+    rechner: GERAET_NAME,
+    geraet_id: gid,
+    synced: false,
+    synced_at: null,
+    benutzer: benutzerName,
+  });
+  return id;
+}
+
+export async function letzteSonstigeAusgaben(limit = 30) {
+  const alle = await getAll("sonstige_ausgaben");
+  return alle.sort((a, b) => (a.datum < b.datum ? 1 : -1)).slice(0, limit);
+}
+
+export async function sonstigeAusgabeIstStorniert(ausgabeId) {
+  const alle = await getAll("sonstige_ausgaben");
+  return alle.some((a) => a.storno_von === ausgabeId);
+}
+
+export async function sonstigeAusgabeStornieren(ausgabeId, benutzerName, kommentar = null) {
+  const ausgabe = await get("sonstige_ausgaben", ausgabeId);
+  if (!ausgabe) throw new Error("Ausgabe nicht gefunden.");
+  if (ausgabe.storno_von) throw new Error("Eine Storno-Ausgabe kann nicht erneut storniert werden.");
+  if (await sonstigeAusgabeIstStorniert(ausgabeId)) {
+    throw new Error("Diese Ausgabe wurde bereits storniert.");
+  }
+  const stornoId = neueId();
+  const gid = await geraetId();
+  await put("sonstige_ausgaben", {
+    id: stornoId,
+    datum: jetzt(),
+    veranstaltung: ausgabe.veranstaltung,
+    betrag: -ausgabe.betrag,
+    beschreibung: ausgabe.beschreibung,
+    storno_von: ausgabeId,
+    rechner: GERAET_NAME,
+    geraet_id: gid,
+    synced: false,
+    synced_at: null,
+    benutzer: benutzerName,
+  });
+  return stornoId;
+}
+
+async function sonstigeAusgabenSumme(veranstaltung, seit) {
+  const alle = await getAll("sonstige_ausgaben");
+  const summe = alle
+    .filter((a) => a.veranstaltung === veranstaltung && a.datum > seit)
+    .reduce((s, a) => s + a.betrag, 0);
+  return rund2(summe);
+}
+
+// ---------------------------------------------------------------------
+// Bargeld-Entnahmen - Pendant zu repository.bargeld_entnahme_erfassen /
+// bargeld_entnahme_stornieren (Runde 27). Dokumentiert, wer Bargeld aus
+// der Kasse erhalten hat (Pflichtfeld Empfaenger). WICHTIG: kassensturzId
+// nur setzen, wenn diese Entnahme den beim Kassensturz gezaehlten
+// Ueberschuss abbildet - eine so verknuepfte Entnahme ist rein informativ
+// und mindert das kuenftige Kassensturz-Soll NICHT zusaetzlich, weil dieser
+// Ueberschuss bereits ueber den Anfangsbestand-Uebertrag (naechsterStartbetrag)
+// aus dem Soll ausgeschlossen ist (siehe kassensturzVorschau/
+// bargeldEntnahmenAdhocSumme unten). Nur echte Ad-hoc-Entnahmen zwischen
+// zwei Kassenstuerzen (kassensturzId nicht gesetzt) mindern das Soll
+// tatsaechlich. Wie eine Schiedsrichter-Auszahlung ein unveraenderliches
+// Ereignis - eine Korrektur erfolgt ausschliesslich per Storno.
+// ---------------------------------------------------------------------
+
+export async function bargeldEntnahmeErfassen(
+  veranstaltung,
+  betrag,
+  empfaenger,
+  kommentar,
+  benutzerName,
+  kassensturzId = null
+) {
+  if (betrag == null || betrag <= 0) throw new Error("Betrag muss größer als 0 sein.");
+  if (!empfaenger || !empfaenger.trim()) throw new Error("Empfänger ist erforderlich.");
+  const id = neueId();
+  const gid = await geraetId();
+  await put("bargeld_entnahmen", {
+    id,
+    datum: jetzt(),
+    veranstaltung,
+    betrag: rund2(betrag),
+    empfaenger: empfaenger.trim(),
+    kommentar: kommentar || null,
+    kassensturz_id: kassensturzId || null,
+    storno_von: null,
+    rechner: GERAET_NAME,
+    geraet_id: gid,
+    synced: false,
+    synced_at: null,
+    benutzer: benutzerName,
+  });
+  return id;
+}
+
+export async function letzteBargeldEntnahmen(limit = 30) {
+  const alle = await getAll("bargeld_entnahmen");
+  return alle.sort((a, b) => (a.datum < b.datum ? 1 : -1)).slice(0, limit);
+}
+
+export async function bargeldEntnahmeIstStorniert(entnahmeId) {
+  const alle = await getAll("bargeld_entnahmen");
+  return alle.some((e) => e.storno_von === entnahmeId);
+}
+
+export async function bargeldEntnahmeStornieren(entnahmeId, benutzerName, kommentar = null) {
+  const entnahme = await get("bargeld_entnahmen", entnahmeId);
+  if (!entnahme) throw new Error("Entnahme nicht gefunden.");
+  if (entnahme.storno_von) throw new Error("Eine Storno-Entnahme kann nicht erneut storniert werden.");
+  if (await bargeldEntnahmeIstStorniert(entnahmeId)) {
+    throw new Error("Diese Entnahme wurde bereits storniert.");
+  }
+  const stornoId = neueId();
+  const gid = await geraetId();
+  await put("bargeld_entnahmen", {
+    id: stornoId,
+    datum: jetzt(),
+    veranstaltung: entnahme.veranstaltung,
+    betrag: -entnahme.betrag,
+    empfaenger: entnahme.empfaenger,
+    kommentar: kommentar || `Storno zu Entnahme ${entnahmeId}`,
+    kassensturz_id: entnahme.kassensturz_id,
+    storno_von: entnahmeId,
+    rechner: GERAET_NAME,
+    geraet_id: gid,
+    synced: false,
+    synced_at: null,
+    benutzer: benutzerName,
+  });
+  return stornoId;
+}
+
+// Nur Entnahmen OHNE kassensturzId (echte Ad-hoc-Entnahmen zwischen zwei
+// Kassenstuerzen) - siehe bargeldEntnahmeErfassen fuer die Begruendung,
+// warum an einen Kassensturz gekoppelte Entnahmen hier bewusst NICHT
+// mitgezaehlt werden (sonst Doppelzaehlung mit dem bereits per
+// Anfangsbestand-Uebertrag ausgeschlossenen Ueberschuss).
+async function bargeldEntnahmenAdhocSumme(veranstaltung, seit) {
+  const alle = await getAll("bargeld_entnahmen");
+  const summe = alle
+    .filter((e) => e.veranstaltung === veranstaltung && e.datum > seit && !e.kassensturz_id)
+    .reduce((s, e) => s + e.betrag, 0);
+  return rund2(summe);
+}
+
+// ---------------------------------------------------------------------
 // Lieferanten-Pfand (Nachbestellungen) - Pendant zu den entsprechenden
 // repository.py-Funktionen. Pfand, das beim Nachbestellen von Getraenken
 // beim Haendler bezahlt bzw. von ihm zurueckerhalten wird - bewusst
@@ -550,15 +718,21 @@ export async function kassensturzVorschau(veranstaltung) {
       .reduce((s, v) => s + v.gesamtbetrag, 0)
   );
   const auszahlungen = await schiedsrichterAuszahlungenSumme(veranstaltung, seit);
+  const sonstigeAusgaben = await sonstigeAusgabenSumme(veranstaltung, seit);
   const einzahlungen = await bargeldEinzahlungenSumme(veranstaltung, seit);
+  const entnahmen = await bargeldEntnahmenAdhocSumme(veranstaltung, seit);
 
   return {
     istErsterKassensturz: letzter === null,
     anfangsbestand: rund2(anfangsbestand),
     einnahmen,
     auszahlungen,
+    sonstigeAusgaben,
     einzahlungen,
-    soll: rund2(anfangsbestand + einnahmen - auszahlungen + einzahlungen),
+    entnahmen,
+    soll: rund2(
+      anfangsbestand + einnahmen - auszahlungen - sonstigeAusgaben + einzahlungen - entnahmen
+    ),
   };
 }
 
@@ -571,7 +745,10 @@ export async function kassensturzDurchfuehren(
 ) {
   const vorschau = await kassensturzVorschau(veranstaltung);
   const anfangsbestand = anfangsbestandOverride ?? vorschau.anfangsbestand;
-  const soll = rund2(anfangsbestand + vorschau.einnahmen - vorschau.auszahlungen + vorschau.einzahlungen);
+  const soll = rund2(
+    anfangsbestand + vorschau.einnahmen - vorschau.auszahlungen - vorschau.sonstigeAusgaben
+      + vorschau.einzahlungen - vorschau.entnahmen
+  );
   const differenz = rund2(gezaehlterBetrag - soll);
   const ksId = neueId();
   const gid = await geraetId();
