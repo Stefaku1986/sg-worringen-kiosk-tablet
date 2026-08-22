@@ -558,12 +558,18 @@ async function bargeldEntnahmenAdhocSumme(veranstaltung, seit) {
 // Storno, nie durch Aendern/Loeschen.
 // ---------------------------------------------------------------------
 
-// positionen: optionale Liste von {produktId, menge, einzelpreis, mwstSatz}
-// - die nachbestellten Produkte (Getraenke UND Speisen), analog zu
-// repository.lieferanten_pfand_erfassen. einzelpreis (Netto-Preis pro
-// Stueck) und mwstSatz sind optional; fuer jede Position mit menge > 0 wird
-// zusaetzlich ein echter Wareneingang gebucht (siehe lagerbewegungErfassen
-// oben) - der Warenbestand aktualisiert sich dadurch direkt.
+// positionen: optionale Liste von {produktId, menge, einzelpreis, mwstSatz,
+// pfandBezahlt, pfandErhalten} - die nachbestellten Produkte (Getraenke UND
+// Speisen), analog zu repository.lieferanten_pfand_erfassen. einzelpreis
+// (Netto-Preis pro Stueck), mwstSatz und pfandBezahlt/pfandErhalten
+// (jeweils PRO STUECK, Runde 32) sind optional; fuer jede Position mit
+// menge > 0 wird zusaetzlich ein echter Wareneingang gebucht (siehe
+// lagerbewegungErfassen oben) - der Warenbestand aktualisiert sich dadurch
+// direkt. bezahlt/erhalten hier sind bereits die GESAMTSUMME inkl. eines
+// etwaigen Pfand-Anteils aus den Positionen (der Aufrufer in main.js
+// rechnet Positions-Pfand * Menge bereits mit ein) - diese Funktion
+// speichert das Positions-Pfand nur zusaetzlich (pro Stueck) fuer die
+// Anzeige je Produkt.
 export async function lieferantenPfandErfassen(
   bezahlt,
   erhalten,
@@ -603,6 +609,8 @@ export async function lieferantenPfandErfassen(
       menge: position.menge,
       einzelpreis: position.einzelpreis ?? null,
       mwst_satz: position.mwstSatz ?? null,
+      pfand_bezahlt: position.pfandBezahlt ?? null,
+      pfand_erhalten: position.pfandErhalten ?? null,
       geraet_id: gid,
       synced: false,
       synced_at: null,
@@ -668,6 +676,8 @@ export async function lieferantenPfandStornieren(eintragId, benutzerName, kommen
       menge: -position.menge,
       einzelpreis: position.einzelpreis,
       mwst_satz: position.mwst_satz,
+      pfand_bezahlt: position.pfand_bezahlt ?? null,
+      pfand_erhalten: position.pfand_erhalten ?? null,
       geraet_id: gid,
       synced: false,
       synced_at: null,

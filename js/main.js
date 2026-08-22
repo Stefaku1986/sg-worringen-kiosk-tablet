@@ -147,6 +147,8 @@ const ksEntnahmeSpeichernBtn = el("ks-entnahme-speichern-btn");
 const npProduktAuswahl = el("np-produkt-auswahl");
 const npProduktMengeFeld = el("np-produkt-menge-feld");
 const npProduktPreisFeld = el("np-produkt-preis-feld");
+const npProduktPfandBezahltFeld = el("np-produkt-pfand-bezahlt-feld");
+const npProduktPfandErhaltenFeld = el("np-produkt-pfand-erhalten-feld");
 const npPositionHinzufuegenBtn = el("np-position-hinzufuegen-btn");
 const npPositionenListe = el("np-positionen-liste");
 const npBezahltFeld = el("np-bezahlt-feld");
@@ -205,7 +207,7 @@ const WOCHENTAG_LABEL = { 1: "Montag", 2: "Dienstag", 3: "Mittwoch", 4: "Donners
 let produkteCache = [];
 let benutzerCache = [];
 let warenkorb = []; // {produktId, name, menge, einzelpreis, einkaufspreis, mwstSatz, istHelferpreis, pfandBetrag, istPfandrueckgabe}
-let nachbestellungPositionen = []; // {produktId, name, menge, einzelpreis (netto, oder null), mwstSatz (oder null), preisBrutto (nur fuer die Anzeige)}
+let nachbestellungPositionen = []; // {produktId, name, menge, einzelpreis (netto, oder null), mwstSatz (oder null), preisBrutto (nur fuer die Anzeige), pfandBezahlt (pro Stueck, oder null), pfandErhalten (pro Stueck, oder null)}
 let helferpreisAktiv = false;
 let angemeldeterKandidat = null; // Benutzer, dessen PIN gerade eingegeben wird
 let pinEingabe = "";
@@ -1303,11 +1305,19 @@ function renderNachbestellungPositionenListe() {
     const div = document.createElement("div");
     div.className = "warenkorb-zeile";
 
+    const pfandTeile = [];
+    if (position.pfandBezahlt) {
+      pfandTeile.push(`${euro(position.pfandBezahlt * position.menge)} Pfand bezahlt`);
+    }
+    if (position.pfandErhalten) {
+      pfandTeile.push(`${euro(position.pfandErhalten * position.menge)} Pfand zurückerhalten`);
+    }
     const name = document.createElement("div");
     name.className = "name";
     name.textContent =
       `${position.name} × ${position.menge}` +
-      (position.einzelpreis != null ? ` (${euro(position.preisBrutto)}/Stück)` : "");
+      (position.einzelpreis != null ? ` (${euro(position.preisBrutto)}/Stück)` : "") +
+      (pfandTeile.length ? ` (${pfandTeile.join(", ")})` : "");
     div.appendChild(name);
 
     const entfernenBtn = document.createElement("button");
@@ -1332,6 +1342,11 @@ function nachbestellungPositionHinzufuegen() {
   const preisBrutto = parseFloat(npProduktPreisFeld.value) || 0;
   const einzelpreis = preisBrutto > 0 ? nettoPreis(preisBrutto, produkt.mwst_satz) : null;
   const mwstSatz = preisBrutto > 0 ? produkt.mwst_satz : null;
+  // Pfand pro Stueck (Runde 32) - wie beim Preis wird nur der Wert pro
+  // Stueck gespeichert, die Hochrechnung mit der Menge passiert erst beim
+  // Anzeigen bzw. beim Speichern (siehe nachbestellungErfassen).
+  const pfandBezahlt = parseFloat(npProduktPfandBezahltFeld.value) || 0;
+  const pfandErhalten = parseFloat(npProduktPfandErhaltenFeld.value) || 0;
   nachbestellungPositionen.push({
     produktId,
     name: produkt.name,
@@ -1339,10 +1354,30 @@ function nachbestellungPositionHinzufuegen() {
     einzelpreis,
     mwstSatz,
     preisBrutto,
+    pfandBezahlt: pfandBezahlt || null,
+    pfandErhalten: pfandErhalten || null,
   });
   npProduktMengeFeld.value = "1";
   npProduktPreisFeld.value = "";
+  npProduktPfandBezahltFeld.value = "";
+  npProduktPfandErhaltenFeld.value = "";
   renderNachbestellungPositionenListe();
+}
+
+// Kurztext einer Nachbestellung-Produktposition fuer die Uebersichtstabelle,
+// z.B. "Fassbrause Zitrone 0,33l × 5 (2,00 € Pfand bezahlt)" - zeigt das
+// Pfand je Produkt an, statt nur den Gesamtbetrag in den Spalten
+// "Pfand bezahlt"/"Pfand zurückerhalten" (Runde 32).
+function nachbestellungPositionText(p) {
+  const produkt = produkteCache.find((pr) => pr.id === p.produkt_id);
+  let text = `${produkt ? produkt.name : "?"} × ${p.menge}`;
+  const pfandTeile = [];
+  const pfandBezahlt = (p.pfand_bezahlt || 0) * p.menge;
+  const pfandErhalten = (p.pfand_erhalten || 0) * p.menge;
+  if (pfandBezahlt) pfandTeile.push(`${euro(pfandBezahlt)} Pfand bezahlt`);
+  if (pfandErhalten) pfandTeile.push(`${euro(pfandErhalten)} Pfand zurückerhalten`);
+  if (pfandTeile.length) text += ` (${pfandTeile.join(", ")})`;
+  return text;
 }
 
 async function renderNachbestellungen() {
@@ -1364,12 +1399,7 @@ async function renderNachbestellungen() {
 
     const positionen = await repo.nachbestellungPositionen(eintrag.id);
     const produkteText = positionen.length
-      ? positionen
-          .map((p) => {
-            const produkt = produkteCache.find((pr) => pr.id === p.produkt_id);
-            return `${produkt ? produkt.name : "?"} × ${p.menge}`;
-          })
-          .join(", ")
+      ? positionen.map((p) => nachbestellungPositionText(p)).join(", ")
       : "—";
 
     const zellen = [
@@ -1417,8 +1447,17 @@ async function renderNachbestellungen() {
 }
 
 async function nachbestellungErfassen() {
-  const bezahlt = parseFloat(npBezahltFeld.value) || 0;
-  const erhalten = parseFloat(npErhaltenFeld.value) || 0;
+  // bezahlt/erhalten = "Sonstiges Pfand" (ohne Produktbezug) PLUS die Summe
+  // des Pfands aller Produkt-Positionen (Pfand/Stück * Menge) - der an
+  // repo.lieferantenPfandErfassen uebergebene Gesamtbetrag bleibt dadurch
+  // vollstaendig, unabhaengig davon, ob das Pfand pro Produkt oder als ein
+  // Gesamtbetrag erfasst wurde (Runde 32, analog zur Windows-App).
+  let bezahlt = parseFloat(npBezahltFeld.value) || 0;
+  let erhalten = parseFloat(npErhaltenFeld.value) || 0;
+  for (const p of nachbestellungPositionen) {
+    bezahlt += (p.pfandBezahlt || 0) * p.menge;
+    erhalten += (p.pfandErhalten || 0) * p.menge;
+  }
   const benutzer = session.getAktuellerBenutzer();
   try {
     await repo.lieferantenPfandErfassen(
@@ -1431,6 +1470,8 @@ async function nachbestellungErfassen() {
         menge: p.menge,
         einzelpreis: p.einzelpreis,
         mwstSatz: p.mwstSatz,
+        pfandBezahlt: p.pfandBezahlt,
+        pfandErhalten: p.pfandErhalten,
       }))
     );
   } catch (exc) {

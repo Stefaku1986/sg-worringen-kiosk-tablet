@@ -266,28 +266,34 @@
           <h2 style="margin-top:0; color:var(--blau-dunkel);">Nachbestellung erfassen</h2>
           <p class="hinweis">
             Nachbestellte Produkte (Getränke und Speisen) mit Menge eintragen – bucht
-            automatisch einen Wareneingang, der Bestand aktualisiert sich direkt. Preis pro
-            Stück ist optional. Dazu bei Bedarf das beim Händler bezahlte bzw.
-            zurückerhaltene Pfand (Leergut-Rückgabe an den Großhändler) – getrennt vom
-            Kunden-Pfand am Kiosk.
+            automatisch einen Wareneingang, der Bestand aktualisiert sich direkt. Preis und
+            Pfand pro Stück sind jeweils optional. Die beiden Felder "Sonstiges Pfand" unten
+            sind für Pfand ohne Bezug zu einer bestimmten Position (z.B. lose Kisten-Rückgabe
+            beim Händler) – getrennt vom Kunden-Pfand am Kiosk.
           </p>
 
           <label><b>Produkt hinzufügen:</b></label>
           <select class="betrag" id="np-produkt-auswahl" style="margin-bottom:6px;"></select>
-          <div style="display:flex; gap:8px; margin-bottom:6px;">
+          <div style="display:flex; gap:8px; margin-bottom:6px; flex-wrap:wrap;">
             <input type="number" inputmode="numeric" min="1" step="1" class="betrag"
                    id="np-produkt-menge-feld" placeholder="Menge" value="1"
-                   style="flex:1; margin:0;" />
+                   style="flex:1; margin:0; min-width:70px;" />
             <input type="number" inputmode="decimal" step="0.01" class="betrag"
                    id="np-produkt-preis-feld" placeholder="Preis/Stück € (optional)"
-                   style="flex:2; margin:0;" />
+                   style="flex:2; margin:0; min-width:110px;" />
+            <input type="number" inputmode="decimal" step="0.01" class="betrag"
+                   id="np-produkt-pfand-bezahlt-feld" placeholder="Pfand/Stück bezahlt € (optional)"
+                   style="flex:2; margin:0; min-width:110px;" />
+            <input type="number" inputmode="decimal" step="0.01" class="betrag"
+                   id="np-produkt-pfand-erhalten-feld" placeholder="Pfand/Stück erhalten € (optional)"
+                   style="flex:2; margin:0; min-width:110px;" />
             <button type="button" class="btn" id="np-position-hinzufuegen-btn">+</button>
           </div>
           <div id="np-positionen-liste" style="margin-bottom:10px;"></div>
 
-          <label><b>Pfand bezahlt:</b></label>
+          <label><b>Sonstiges Pfand bezahlt (ohne Produktbezug):</b></label>
           <input type="number" inputmode="decimal" step="0.01" class="betrag" id="np-bezahlt-feld" />
-          <label><b>Pfand zurückerhalten:</b></label>
+          <label><b>Sonstiges Pfand zurückerhalten (ohne Produktbezug):</b></label>
           <input type="number" inputmode="decimal" step="0.01" class="betrag" id="np-erhalten-feld" />
           <label><b>Kommentar (optional):</b></label>
           <input type="text" class="betrag" id="np-kommentar-feld" placeholder="z.B. Lieferant/Anlass" />
