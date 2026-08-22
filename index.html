@@ -41,6 +41,14 @@
       <button id="tab-verkauf" class="aktiv">Verkauf</button>
       <button id="tab-storno">Stornieren</button>
       <button id="tab-kassensturz">Kassensturz</button>
+      <button id="tab-mehr">Mehr ▾</button>
+    </nav>
+    <!-- Runde 30: die selteneren Reiter sind hier gebuendelt, damit die
+         Reiterleiste oben kurz bleibt (Nutzerwunsch: "Das gilt auch für
+         die tablet App", analog zum "Admin"-Reiter der Windows-App) -
+         eingeblendet, sobald "Mehr" oder eine der Unteransichten aktiv
+         ist (siehe zeigeHauptView in main.js). -->
+    <nav id="mehr-tabs" style="display:none;">
       <button id="tab-schiedsrichter">Schiedsrichter</button>
       <button id="tab-einzahlen">Einzahlen</button>
       <button id="tab-ausgaben">Ausgaben</button>
@@ -445,6 +453,14 @@
         einzigen Antippen sofort eine pauschale Pfandrückgabe – es muss dafür
         keine Flasche extra ausgewählt werden. Ausnahme: bei Artikeln zum
         <b>Helferpreis</b> wird kein Pfand berechnet.</p>
+
+        <h3>Reiter „Mehr“</h3>
+        <p>Die selteneren Funktionen (Schiedsrichter, Einzahlen, Ausgaben,
+        Entnahmen, Nachbestellungen, Termine, Feedback) stehen jetzt
+        gebündelt unter dem Reiter <b>„Mehr“</b>, darunter erscheint eine
+        zweite Reiterleiste zur Auswahl – damit die Hauptleiste oben kurz
+        bleibt. Ein erneutes Antippen von „Mehr“ springt zur zuletzt
+        gewählten Unteransicht zurück.</p>
 
         <h3>Schiedsrichter-Auszahlungen</h3>
         <p>Im Reiter <b>„Schiedsrichter“</b> werden Bar-Auszahlungen an

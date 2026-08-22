@@ -30,6 +30,8 @@ const tabsEl = el("tabs");
 const tabVerkauf = el("tab-verkauf");
 const tabStorno = el("tab-storno");
 const tabKassensturz = el("tab-kassensturz");
+const tabMehr = el("tab-mehr");
+const mehrTabsEl = el("mehr-tabs");
 const tabSchiedsrichter = el("tab-schiedsrichter");
 const tabEinzahlen = el("tab-einzahlen");
 const tabAusgaben = el("tab-ausgaben");
@@ -37,6 +39,21 @@ const tabEntnahmen = el("tab-entnahmen");
 const tabNachbestellung = el("tab-nachbestellung");
 const tabTermine = el("tab-termine");
 const tabFeedback = el("tab-feedback");
+
+// Ansichten, die (Runde 30) unter dem gemeinsamen Reiter "Mehr" gebuendelt
+// sind, um die Reiterleiste kuerzer zu machen (analog zum "Admin"-Reiter
+// der Windows-App, dort aber nach Admin-Rechten gruppiert - auf dem
+// Tablet ist bis auf "nachbestellung" alles hier fuer alle Helfer
+// sichtbar, es geht nur um weniger Reiter oben, siehe unten).
+const MEHR_ANSICHTEN = [
+  "schiedsrichter",
+  "einzahlen",
+  "ausgaben",
+  "entnahmen",
+  "nachbestellung",
+  "termine",
+  "feedback",
+];
 
 const kassenvorschlagBanner = el("kassenvorschlag-banner");
 const kassenvorschlagText = el("kassenvorschlag-text");
@@ -196,6 +213,7 @@ let aktuelleAnsicht = "login"; // 'login' | 'verkauf' | 'storno' | 'kassensturz'
 let letzterKassensturzSoll = 0;
 let vorgaengeCache = []; // fuer Storno-Ansicht
 let abgelehnteKassenvorschlaege = new Set(); // "schluessel" bereits verworfener Vorschlaege
+let letzteMehrAnsicht = null; // zuletzt aktive Unteransicht innerhalb "Mehr", siehe zeigeHauptView
 
 // ---------------------------------------------------------------------
 // Hinweis-/Bestaetigungs-Dialog
@@ -278,6 +296,7 @@ function zeigeHauptView(name) {
     feedbackView.style.display = "none";
     kassenvorschlagBanner.classList.add("versteckt");
     tabsEl.style.display = "none";
+    mehrTabsEl.style.display = "none";
     kasseAuswahlBereich.style.display = "none";
     benutzerLabel.style.display = "none";
     abmeldenBtn.style.display = "none";
@@ -304,9 +323,18 @@ function zeigeHauptView(name) {
   termineView.style.display = name === "termine" ? "" : "none";
   feedbackView.style.display = name === "feedback" ? "" : "none";
 
+  // "Mehr"-Buendel (Runde 30): eine der 7 Unteransichten ist aktiv -> der
+  // Reiter "Mehr" wird als aktiv markiert und die Unter-Reiterleiste
+  // eingeblendet; die zuletzt gewaehlte Unteransicht wird gemerkt, damit
+  // ein erneutes Antippen von "Mehr" dort wieder hinspringt.
+  const istMehrAnsicht = MEHR_ANSICHTEN.includes(name);
+  if (istMehrAnsicht) letzteMehrAnsicht = name;
+  mehrTabsEl.style.display = istMehrAnsicht ? "flex" : "none";
+
   tabVerkauf.classList.toggle("aktiv", name === "verkauf");
   tabStorno.classList.toggle("aktiv", name === "storno");
   tabKassensturz.classList.toggle("aktiv", name === "kassensturz");
+  tabMehr.classList.toggle("aktiv", istMehrAnsicht);
   tabSchiedsrichter.classList.toggle("aktiv", name === "schiedsrichter");
   tabEinzahlen.classList.toggle("aktiv", name === "einzahlen");
   tabAusgaben.classList.toggle("aktiv", name === "ausgaben");
@@ -429,6 +457,7 @@ function abmelden() {
   warenkorb = [];
   nachbestellungPositionen = [];
   helferpreisAktiv = false;
+  letzteMehrAnsicht = null;
   renderLoginNutzer();
   zeigeHauptView("login");
 }
@@ -1795,6 +1824,16 @@ function wireEvents() {
   tabVerkauf.onclick = () => zeigeHauptView("verkauf");
   tabStorno.onclick = () => zeigeHauptView("storno");
   tabKassensturz.onclick = () => zeigeHauptView("kassensturz");
+  tabMehr.onclick = () => {
+    // Nicht-Administratoren duerfen "nachbestellung" nicht sehen - falls
+    // das (aus einer vorherigen Admin-Anmeldung in derselben Sitzung) die
+    // zuletzt gewaehlte Unteransicht war, stattdessen die erste sichtbare
+    // Unteransicht oeffnen.
+    const benutzer = session.getAktuellerBenutzer();
+    let ziel = letzteMehrAnsicht || "schiedsrichter";
+    if (ziel === "nachbestellung" && !benutzer?.ist_admin) ziel = "schiedsrichter";
+    zeigeHauptView(ziel);
+  };
   tabSchiedsrichter.onclick = () => zeigeHauptView("schiedsrichter");
   tabEinzahlen.onclick = () => zeigeHauptView("einzahlen");
   tabAusgaben.onclick = () => zeigeHauptView("ausgaben");

@@ -155,6 +155,34 @@ button.btn-primaer:active {
   color: white;
 }
 
+/* Unter-Reiterleiste "Mehr" (Runde 30): buendelt die selteneren
+   Ansichten (Schiedsrichter/Einzahlen/Ausgaben/Entnahmen/
+   Nachbestellungen/Termine/Feedback), etwas dezenter als die
+   Haupt-Reiterleiste, damit der Unterschied zwischen Haupt- und
+   Unter-Ebene erkennbar bleibt. */
+#mehr-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  background: var(--grau-hintergrund);
+  border-bottom: 1px solid var(--grau-rand);
+  padding: 6px 12px;
+}
+#mehr-tabs button {
+  background: transparent;
+  border: none;
+  padding: 8px 14px;
+  font-size: 14px;
+  font-weight: 700;
+  border-radius: 8px;
+  color: var(--text-dunkel);
+  cursor: pointer;
+}
+#mehr-tabs button.aktiv {
+  background: var(--blau);
+  color: white;
+}
+
 #ansicht {
   flex: 1;
   overflow-y: auto;
