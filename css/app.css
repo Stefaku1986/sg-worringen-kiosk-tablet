@@ -350,8 +350,15 @@ button.btn-primaer:active {
 }
 /* Kein Umschalter mehr, sondern eine Sofort-Aktion (ein Antippen bucht
    direkt eine pauschale Rückgabe) - deshalb dauerhaft rot statt nur im
-   .aktiv-Zustand. */
-.pfand-rueckgabe-btn {
+   .aktiv-Zustand. Bewusst "button.pfand-rueckgabe-btn" (Element + Klasse)
+   statt nur ".pfand-rueckgabe-btn": eine reine Klassen-Selektor-Regel hat
+   eine NIEDRIGERE CSS-Spezifität als "button.btn" oben (Element + Klasse)
+   und wurde von dessen weißem Hintergrund immer überschrieben, unabhängig
+   von der Reihenfolge im Stylesheet - der Knopf blieb dadurch weiß statt
+   rot. Mit gleicher Spezifität wie "button.btn" gewinnt diese spätere
+   Regel jetzt korrekt per Cascade-Reihenfolge (genau wie bei
+   "button.btn-primaer" oben). */
+button.pfand-rueckgabe-btn {
   width: 100%;
   margin-bottom: 10px;
   background: var(--rot);
