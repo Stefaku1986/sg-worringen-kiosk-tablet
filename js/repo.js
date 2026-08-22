@@ -709,3 +709,64 @@ export async function listeKommendeHeimspiele(anzahlTage = 30) {
     .filter((s) => s.datum >= heuteIso && s.datum <= grenzeIso)
     .sort((a, b) => (a.datum + a.start_uhrzeit).localeCompare(b.datum + b.start_uhrzeit));
 }
+
+// ---------------------------------------------------------------------
+// Feedback (Funktions-/Produktwuensche) - Pendant zu kiosk/repository.py,
+// Abschnitt "Feedback". Offenes Ideen-Board: alle Benutzer sehen alle
+// Eintraege (siehe main.js), nicht nur die eigenen. Anders als z.B.
+// Kassiervorgaenge eine ganz normale mutable Aktualisierung (status/
+// antwort werden nachtraeglich per put() ueberschrieben, kein eigenes
+// Storno-Konzept), genau wie benutzer.ist_admin/aktiv.
+// ---------------------------------------------------------------------
+
+export async function feedbackEinreichen(kategorie, text, benutzerName) {
+  const getrimmt = (text || "").trim();
+  if (!kategorie || !getrimmt) {
+    throw new Error("Kategorie und Text sind erforderlich.");
+  }
+  const id = neueId();
+  const gid = await geraetId();
+  await put("feedback", {
+    id,
+    kategorie,
+    text: getrimmt,
+    ersteller: benutzerName || null,
+    erstellt_am: jetzt(),
+    status: "offen",
+    antwort: null,
+    beantwortet_von: null,
+    beantwortet_am: null,
+    rechner: GERAET_NAME,
+    geraet_id: gid,
+    synced: false,
+    synced_at: null,
+  });
+  return id;
+}
+
+export async function listeFeedback() {
+  const alle = await getAll("feedback");
+  return alle.sort((a, b) => (a.erstellt_am < b.erstellt_am ? 1 : -1));
+}
+
+export async function feedbackStatusSetzen(feedbackId, status, antwort, benutzerName) {
+  const gueltig = ["offen", "in_bearbeitung", "erledigt", "abgelehnt"];
+  if (!gueltig.includes(status)) {
+    throw new Error("Ungültiger Status.");
+  }
+  const eintrag = await get("feedback", feedbackId);
+  if (!eintrag) {
+    throw new Error("Feedback-Eintrag wurde nicht gefunden.");
+  }
+  const gid = await geraetId();
+  await put("feedback", {
+    ...eintrag,
+    status,
+    antwort: (antwort || "").trim() || null,
+    beantwortet_von: benutzerName || null,
+    beantwortet_am: jetzt(),
+    geraet_id: gid,
+    synced: false,
+    synced_at: null,
+  });
+}

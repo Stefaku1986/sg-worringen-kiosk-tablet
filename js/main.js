@@ -3,7 +3,7 @@
 // Schritt: einfaches DOM-Handling, wie es fuer eine kleine Kiosk-App
 // voellig ausreicht.
 
-import { APP_VERSION, SYNC_INTERVAL_SECONDS, TEAMS } from "./config.js";
+import { APP_VERSION, SYNC_INTERVAL_SECONDS, TEAMS, FEEDBACK_STATUS_LABEL } from "./config.js";
 import { euro, deZahl, nettoPreis } from "./format.js";
 import * as repo from "./repo.js";
 import * as session from "./session.js";
@@ -34,6 +34,7 @@ const tabSchiedsrichter = el("tab-schiedsrichter");
 const tabEinzahlen = el("tab-einzahlen");
 const tabNachbestellung = el("tab-nachbestellung");
 const tabTermine = el("tab-termine");
+const tabFeedback = el("tab-feedback");
 
 const kassenvorschlagBanner = el("kassenvorschlag-banner");
 const kassenvorschlagText = el("kassenvorschlag-text");
@@ -48,6 +49,7 @@ const schiedsrichterView = el("schiedsrichter-view");
 const einzahlenView = el("einzahlen-view");
 const nachbestellungView = el("nachbestellung-view");
 const termineView = el("termine-view");
+const feedbackView = el("feedback-view");
 
 const loginNutzerauswahl = el("login-nutzerauswahl");
 const nutzerGrid = el("nutzer-grid");
@@ -117,6 +119,19 @@ const tsFehler = el("ts-fehler");
 const tsEintragenBtn = el("ts-eintragen-btn");
 const tsHeimspieleBody = document.querySelector("#ts-heimspiele-tabelle tbody");
 const tsTrainingsplanBody = document.querySelector("#ts-trainingsplan-tabelle tbody");
+
+const fbKategorieAuswahl = el("fb-kategorie-auswahl");
+const fbTextFeld = el("fb-text-feld");
+const fbFehler = el("fb-fehler");
+const fbEinreichenBtn = el("fb-einreichen-btn");
+const fbTabelleBody = document.querySelector("#fb-tabelle tbody");
+
+const feedbackStatusOverlay = el("feedback-status-overlay");
+const fbsWunschAnzeige = el("fbs-wunsch-anzeige");
+const fbsStatusAuswahl = el("fbs-status-auswahl");
+const fbsAntwortFeld = el("fbs-antwort-feld");
+const fbsAbbrechenBtn = el("fbs-abbrechen-btn");
+const fbsSpeichernBtn = el("fbs-speichern-btn");
 
 const bezahlenOverlay = el("bezahlen-overlay");
 const bezahlenSumme = el("bezahlen-summe");
@@ -229,6 +244,7 @@ function zeigeHauptView(name) {
     einzahlenView.style.display = "none";
     nachbestellungView.style.display = "none";
     termineView.style.display = "none";
+    feedbackView.style.display = "none";
     kassenvorschlagBanner.classList.add("versteckt");
     tabsEl.style.display = "none";
     kasseAuswahlBereich.style.display = "none";
@@ -253,6 +269,7 @@ function zeigeHauptView(name) {
   einzahlenView.style.display = name === "einzahlen" ? "" : "none";
   nachbestellungView.style.display = name === "nachbestellung" ? "" : "none";
   termineView.style.display = name === "termine" ? "" : "none";
+  feedbackView.style.display = name === "feedback" ? "" : "none";
 
   tabVerkauf.classList.toggle("aktiv", name === "verkauf");
   tabStorno.classList.toggle("aktiv", name === "storno");
@@ -261,6 +278,7 @@ function zeigeHauptView(name) {
   tabEinzahlen.classList.toggle("aktiv", name === "einzahlen");
   tabNachbestellung.classList.toggle("aktiv", name === "nachbestellung");
   tabTermine.classList.toggle("aktiv", name === "termine");
+  tabFeedback.classList.toggle("aktiv", name === "feedback");
 
   if (name === "verkauf") renderProduktGrid();
   if (name === "storno") renderStornoListe();
@@ -269,6 +287,7 @@ function zeigeHauptView(name) {
   if (name === "einzahlen") renderEinzahlungen();
   if (name === "nachbestellung") renderNachbestellungen();
   if (name === "termine") renderTermine();
+  if (name === "feedback") renderFeedback();
 }
 
 // ---------------------------------------------------------------------
@@ -1205,6 +1224,88 @@ async function heimspielEintragen() {
 }
 
 // ---------------------------------------------------------------------
+// Feedback (Funktions-/Produktwuensche) - offenes Ideen-Board, alle sehen
+// alle Eintraege. Nur Administrator:innen sehen den "Bearbeiten"-Knopf je
+// Zeile (siehe FeedbackStatusDialog in der Windows-App, Pendant hier ist
+// #feedback-status-overlay).
+// ---------------------------------------------------------------------
+
+let feedbackBearbeitenId = null;
+
+async function renderFeedback() {
+  const benutzer = session.getAktuellerBenutzer();
+  const eintraege = await repo.listeFeedback();
+  fbTabelleBody.innerHTML = "";
+  for (const eintrag of eintraege) {
+    const tr = document.createElement("tr");
+    const zellen = [
+      (eintrag.erstellt_am || "").slice(0, 10).split("-").reverse().join("."),
+      eintrag.kategorie,
+      eintrag.text,
+      eintrag.ersteller || "–",
+      FEEDBACK_STATUS_LABEL[eintrag.status] ?? eintrag.status,
+      eintrag.antwort || "–",
+    ];
+    zellen.forEach((wert, index) => {
+      const td = document.createElement("td");
+      td.textContent = wert;
+      if (index === 4) td.className = `fb-status-${eintrag.status}`;
+      tr.appendChild(td);
+    });
+    const aktionTd = document.createElement("td");
+    if (benutzer?.ist_admin) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "btn";
+      btn.textContent = "Bearbeiten";
+      btn.onclick = () => feedbackStatusOeffnen(eintrag);
+      aktionTd.appendChild(btn);
+    }
+    tr.appendChild(aktionTd);
+    fbTabelleBody.appendChild(tr);
+  }
+}
+
+async function feedbackEinreichen() {
+  const benutzer = session.getAktuellerBenutzer();
+  try {
+    await repo.feedbackEinreichen(fbKategorieAuswahl.value, fbTextFeld.value, benutzer.name);
+  } catch (exc) {
+    fbFehler.textContent = exc.message ?? String(exc);
+    return;
+  }
+  fbTextFeld.value = "";
+  fbFehler.textContent = "";
+  renderFeedback();
+}
+
+function feedbackStatusOeffnen(eintrag) {
+  feedbackBearbeitenId = eintrag.id;
+  fbsWunschAnzeige.textContent = `${eintrag.kategorie} von ${eintrag.ersteller || "–"}: ${eintrag.text}`;
+  fbsStatusAuswahl.value = eintrag.status;
+  fbsAntwortFeld.value = eintrag.antwort || "";
+  feedbackStatusOverlay.classList.remove("versteckt");
+}
+
+function feedbackStatusSchliessen() {
+  feedbackStatusOverlay.classList.add("versteckt");
+  feedbackBearbeitenId = null;
+}
+
+async function feedbackStatusSpeichern() {
+  if (!feedbackBearbeitenId) return;
+  const benutzer = session.getAktuellerBenutzer();
+  await repo.feedbackStatusSetzen(
+    feedbackBearbeitenId,
+    fbsStatusAuswahl.value,
+    fbsAntwortFeld.value,
+    benutzer.name
+  );
+  feedbackStatusSchliessen();
+  renderFeedback();
+}
+
+// ---------------------------------------------------------------------
 // Kassenvorschlag - schlaegt anhand von Trainingsplan/Heimspielen die
 // vermutlich richtige Kasse vor, schaltet aber NIE selbststaendig um
 // (siehe repo.empfohleneKasse). Wird beim Anmelden sowie periodisch
@@ -1299,6 +1400,8 @@ async function nachSyncAktualisieren() {
     renderNachbestellungen();
   } else if (aktuelleAnsicht === "termine") {
     renderTermine();
+  } else if (aktuelleAnsicht === "feedback") {
+    renderFeedback();
   }
   pruefeKassenvorschlag();
 }
@@ -1410,11 +1513,15 @@ function wireEvents() {
   tabEinzahlen.onclick = () => zeigeHauptView("einzahlen");
   tabNachbestellung.onclick = () => zeigeHauptView("nachbestellung");
   tabTermine.onclick = () => zeigeHauptView("termine");
+  tabFeedback.onclick = () => zeigeHauptView("feedback");
   srAuszahlenBtn.onclick = schiedsrichterAuszahlen;
   ezEinzahlenBtn.onclick = bargeldEinzahlen;
   npPositionHinzufuegenBtn.onclick = nachbestellungPositionHinzufuegen;
   npErfassenBtn.onclick = nachbestellungErfassen;
   tsEintragenBtn.onclick = heimspielEintragen;
+  fbEinreichenBtn.onclick = feedbackEinreichen;
+  fbsAbbrechenBtn.onclick = feedbackStatusSchliessen;
+  fbsSpeichernBtn.onclick = feedbackStatusSpeichern;
 
   kassenvorschlagUebernehmenBtn.onclick = kassenvorschlagUebernehmen;
   kassenvorschlagVerwerfenBtn.onclick = kassenvorschlagVerwerfen;
@@ -1444,6 +1551,9 @@ function wireEvents() {
   });
   hilfeOverlay.addEventListener("click", (ev) => {
     if (ev.target === hilfeOverlay) hilfeSchliessen();
+  });
+  feedbackStatusOverlay.addEventListener("click", (ev) => {
+    if (ev.target === feedbackStatusOverlay) feedbackStatusSchliessen();
   });
 }
 

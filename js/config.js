@@ -14,7 +14,7 @@ export const SUPABASE_ANON_KEY = "sb_publishable_UGRAXILrHUkfckecBNXLrQ_6Mgrq_sQ
 // analog zur Fenstertitel-Versionsanzeige der Windows-App (kiosk/__version__.py).
 // Bei sichtbaren Aenderungen an der Tablet-App bitte erhoehen (z.B. 1.1.0
 // fuer neue Funktionen, 1.0.1 fuer reine Bugfixes).
-export const APP_VERSION = "1.7.0";
+export const APP_VERSION = "1.8.0";
 
 // Feste ID eines einzigen, bewusst deaktivierten Pseudo-Produkts
 // "Pfandrückgabe (pauschal)" (pfand_betrag = 2,00 €), einmalig direkt in
@@ -51,3 +51,13 @@ export const TEAMS = [
   { team: "1. Mannschaft", kasse: "Senioren" },
   { team: "Alte Herren", kasse: "Senioren" },
 ];
+
+// Kategorien und Status fuer den Reiter "Feedback" (Funktions-/
+// Produktwuensche). Identisch zu kiosk/config.py.
+export const FEEDBACK_KATEGORIEN = ["Funktionswunsch", "Produktwunsch", "Sonstiges"];
+export const FEEDBACK_STATUS_LABEL = {
+  offen: "Offen",
+  in_bearbeitung: "In Bearbeitung",
+  erledigt: "Erledigt",
+  abgelehnt: "Abgelehnt",
+};

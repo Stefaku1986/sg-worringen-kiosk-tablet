@@ -39,6 +39,12 @@ const SCHREIBBARE_TABELLEN = [
   "lieferanten_pfand",
   "nachbestellung_positionen",
   "heimspiele",
+  // Feedback-Reiter (Funktions-/Produktwuensche): anders als die meisten
+  // anderen Tabellen hier eine mutable Zeile (status/antwort werden
+  // nachtraeglich veraendert, siehe repo.js feedbackStatusSetzen) - "push
+  // vor pull" sorgt wie bei "benutzer" dafuer, dass keine Merge-Konflikte
+  // entstehen.
+  "feedback",
 ];
 const ALLE_TABELLEN = [...NUR_LESEN_TABELLEN, ...SCHREIBBARE_TABELLEN];
 

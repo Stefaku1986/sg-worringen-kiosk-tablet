@@ -11,13 +11,12 @@
 // Push-dann-Pull-Prinzip wie kiosk/sync.py).
 
 const DB_NAME = "sg-worringen-kiosk-tablet";
-// Version 5 (seit den erweiterten Nachbestellungen mit Produkt-Positionen):
-// neuer Store "nachbestellung_positionen" hinzugefuegt. Ein IndexedDB-
-// "onupgradeneeded" laeuft nur beim Erstoeffnen ODER bei einer hoeheren
-// Versionsnummer als zuvor - deshalb muss diese Zahl bei jedem neuen Store
-// erhoeht werden, sonst bleiben bereits installierte Tablets bei den alten
-// Stores haengen.
-const DB_VERSION = 5;
+// Version 6 (seit dem Feedback-Reiter): neuer Store "feedback"
+// hinzugefuegt. Ein IndexedDB-"onupgradeneeded" laeuft nur beim
+// Erstoeffnen ODER bei einer hoeheren Versionsnummer als zuvor - deshalb
+// muss diese Zahl bei jedem neuen Store erhoeht werden, sonst bleiben
+// bereits installierte Tablets bei den alten Stores haengen.
+const DB_VERSION = 6;
 
 // Bewusst ohne zusaetzliche Indizes: bei den ueberschaubaren Datenmengen
 // eines Vereins-Kiosks ist ein einfaches getAll() + Filtern in JavaScript
@@ -36,6 +35,7 @@ const STORES = {
   kassenstuerze: { keyPath: "id" },
   trainingszeiten: { keyPath: "id" },
   heimspiele: { keyPath: "id" },
+  feedback: { keyPath: "id" },
   meta: { keyPath: "schluessel" },
 };
 

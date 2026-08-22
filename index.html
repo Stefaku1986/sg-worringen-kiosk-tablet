@@ -45,6 +45,7 @@
       <button id="tab-einzahlen">Einzahlen</button>
       <button id="tab-nachbestellung" style="display:none;">Nachbestellungen</button>
       <button id="tab-termine">Termine</button>
+      <button id="tab-feedback">Feedback</button>
     </nav>
 
     <div id="kassenvorschlag-banner" class="kassenvorschlag-banner versteckt">
@@ -277,6 +278,38 @@
           </table>
         </div>
       </section>
+
+      <!-- Feedback (Funktions-/Produktwuensche) -->
+      <section id="feedback-view" style="display:none;">
+        <div class="karte" style="max-width:480px;">
+          <h2 style="margin-top:0; color:var(--blau-dunkel);">Feedback einreichen</h2>
+          <p class="hinweis">
+            Funktions- oder Produktwünsche für die App? Hier eintragen – alle
+            sehen alle Einträge, damit Doppelvorschläge auffallen und
+            sichtbar wird, was daraus geworden ist.
+          </p>
+          <label><b>Kategorie:</b></label>
+          <select class="betrag" id="fb-kategorie-auswahl">
+            <option value="Funktionswunsch">Funktionswunsch</option>
+            <option value="Produktwunsch">Produktwunsch</option>
+            <option value="Sonstiges">Sonstiges</option>
+          </select>
+          <label><b>Wunsch:</b></label>
+          <textarea class="betrag" id="fb-text-feld" rows="4" placeholder="Was wünschst du dir?"></textarea>
+          <div id="fb-fehler" class="pin-fehler"></div>
+          <button id="fb-einreichen-btn" class="btn btn-primaer" style="width:100%;">Absenden</button>
+        </div>
+
+        <div class="karte">
+          <h2 style="margin-top:0; color:var(--blau-dunkel);">Alle Einträge</h2>
+          <table class="liste" id="fb-tabelle">
+            <thead>
+              <tr><th>Datum</th><th>Kategorie</th><th>Wunsch</th><th>Von</th><th>Status</th><th>Antwort</th><th></th></tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
     </main>
   </div>
 
@@ -361,6 +394,13 @@
         Vorschuss für den Wareneinkauf). Das erhöht das Bargeld in der Kasse
         und wird beim nächsten Kassensturz automatisch berücksichtigt.</p>
 
+        <h3>Feedback</h3>
+        <p>Im Reiter <b>„Feedback“</b> lassen sich Funktions- und
+        Produktwünsche eintragen – ein offenes Ideen-Board: alle sehen alle
+        Einträge, damit Doppelvorschläge auffallen. Administratoren können
+        zusätzlich den Status setzen (Offen/In Bearbeitung/Erledigt/
+        Abgelehnt) und optional kurz antworten.</p>
+
         <h3>Sync &amp; Kasse wechseln</h3>
         <p>Die App synchronisiert automatisch im Hintergrund mit der
         zentralen Datenbank – <b>„Sync“</b> stößt das auch manuell an. Ohne
@@ -370,6 +410,27 @@
       </div>
       <div class="aktionen">
         <button id="hilfe-schliessen-btn" class="btn btn-primaer">Schließen</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Feedback-Status-Dialog (nur Administratoren) -->
+  <div id="feedback-status-overlay" class="overlay versteckt">
+    <div class="modal">
+      <h2>Feedback-Status ändern</h2>
+      <p id="fbs-wunsch-anzeige" class="hinweis"></p>
+      <label><b>Status:</b></label>
+      <select class="betrag" id="fbs-status-auswahl">
+        <option value="offen">Offen</option>
+        <option value="in_bearbeitung">In Bearbeitung</option>
+        <option value="erledigt">Erledigt</option>
+        <option value="abgelehnt">Abgelehnt</option>
+      </select>
+      <label><b>Antwort (optional):</b></label>
+      <textarea class="betrag" id="fbs-antwort-feld" rows="3"></textarea>
+      <div class="aktionen">
+        <button id="fbs-abbrechen-btn" class="btn">Abbrechen</button>
+        <button id="fbs-speichern-btn" class="btn btn-primaer">Speichern</button>
       </div>
     </div>
   </div>

@@ -388,6 +388,17 @@ table.liste tr.storniert td {
 table.liste button.btn {
   padding: 6px 10px;
 }
+table.liste td.fb-status-erledigt {
+  color: #1f7a3d;
+  font-weight: 700;
+}
+table.liste td.fb-status-abgelehnt {
+  color: #8a8f98;
+}
+table.liste td.fb-status-in_bearbeitung {
+  color: var(--blau-dunkel);
+  font-weight: 700;
+}
 
 /* -------------------- Kassensturz -------------------- */
 .kennzahl-zeile {
@@ -402,12 +413,14 @@ table.liste button.btn {
   border-top: 2px solid var(--blau);
   padding-top: 10px;
 }
-/* .betrag wird auf <input>- UND auf mind. einem <select> (Team-Auswahl bei
-   den Terminen) verwendet - beide Tags brauchen dieselbe explizite Hell-
-   Faerbung, sonst greift bei <select> sonst nichts (der Selektor unten war
-   vorher auf "input.betrag" beschraenkt und traf das <select> gar nicht). */
+/* .betrag wird auf <input>-, <select>- (Team-Auswahl bei den Terminen) UND
+   <textarea>-Elementen (Feedback-Text/-Antwort) verwendet - alle drei Tags
+   brauchen dieselbe explizite Hell-Faerbung, sonst greift bei <select>/
+   <textarea> sonst nichts (der Selektor unten war vorher auf "input.betrag"
+   beschraenkt und traf weder <select> noch <textarea>). */
 input.betrag,
-select.betrag {
+select.betrag,
+textarea.betrag {
   width: 100%;
   padding: 10px;
   font-size: 18px;
@@ -416,6 +429,8 @@ select.betrag {
   border: 1px solid var(--grau-rand);
   border-radius: 6px;
   margin: 6px 0 14px 0;
+  font-family: inherit;
+  resize: vertical;
 }
 
 /* -------------------- Overlay / Modal -------------------- */
