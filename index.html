@@ -187,16 +187,31 @@
         </div>
       </section>
 
-      <!-- Nachbestellungen (Lieferanten-Pfand) - nur fuer Administratoren -->
+      <!-- Nachbestellungen (Produkte + Lieferanten-Pfand) - nur fuer Administratoren -->
       <section id="nachbestellung-view" style="display:none;">
-        <div class="karte" style="max-width:480px;">
+        <div class="karte" style="max-width:560px;">
           <h2 style="margin-top:0; color:var(--blau-dunkel);">Nachbestellung erfassen</h2>
           <p class="hinweis">
-            Pfand, das beim Nachbestellen von Getränken beim Händler bezahlt bzw. von ihm
-            zurückerhalten wird (Leergut-Rückgabe an den Großhändler) – getrennt vom
-            Kunden-Pfand am Kiosk. Die Produkte/Mengen selbst weiterhin über die Windows-App
-            ("Warenwirtschaft") erfassen.
+            Nachbestellte Produkte (Getränke und Speisen) mit Menge eintragen – bucht
+            automatisch einen Wareneingang, der Bestand aktualisiert sich direkt. Preis pro
+            Stück ist optional. Dazu bei Bedarf das beim Händler bezahlte bzw.
+            zurückerhaltene Pfand (Leergut-Rückgabe an den Großhändler) – getrennt vom
+            Kunden-Pfand am Kiosk.
           </p>
+
+          <label><b>Produkt hinzufügen:</b></label>
+          <select class="betrag" id="np-produkt-auswahl" style="margin-bottom:6px;"></select>
+          <div style="display:flex; gap:8px; margin-bottom:6px;">
+            <input type="number" inputmode="numeric" min="1" step="1" class="betrag"
+                   id="np-produkt-menge-feld" placeholder="Menge" value="1"
+                   style="flex:1; margin:0;" />
+            <input type="number" inputmode="decimal" step="0.01" class="betrag"
+                   id="np-produkt-preis-feld" placeholder="Preis/Stück € (optional)"
+                   style="flex:2; margin:0;" />
+            <button type="button" class="btn" id="np-position-hinzufuegen-btn">+</button>
+          </div>
+          <div id="np-positionen-liste" style="margin-bottom:10px;"></div>
+
           <label><b>Pfand bezahlt:</b></label>
           <input type="number" inputmode="decimal" step="0.01" class="betrag" id="np-bezahlt-feld" />
           <label><b>Pfand zurückerhalten:</b></label>
@@ -211,7 +226,7 @@
           <h2 style="margin-top:0; color:var(--blau-dunkel);">Letzte Nachbestellungen</h2>
           <table class="liste" id="np-tabelle">
             <thead>
-              <tr><th>Datum</th><th>Bezahlt</th><th>Erhalten</th><th>Status</th><th></th></tr>
+              <tr><th>Datum</th><th>Produkte</th><th>Bezahlt</th><th>Erhalten</th><th>Status</th><th></th></tr>
             </thead>
             <tbody></tbody>
           </table>

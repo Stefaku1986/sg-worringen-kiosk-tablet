@@ -37,6 +37,7 @@ const SCHREIBBARE_TABELLEN = [
   "schiedsrichter_auszahlungen",
   "bargeld_einzahlungen",
   "lieferanten_pfand",
+  "nachbestellung_positionen",
   "heimspiele",
 ];
 const ALLE_TABELLEN = [...NUR_LESEN_TABELLEN, ...SCHREIBBARE_TABELLEN];

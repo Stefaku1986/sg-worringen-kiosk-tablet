@@ -4,7 +4,7 @@
 // voellig ausreicht.
 
 import { APP_VERSION, SYNC_INTERVAL_SECONDS, TEAMS } from "./config.js";
-import { euro, deZahl } from "./format.js";
+import { euro, deZahl, nettoPreis } from "./format.js";
 import * as repo from "./repo.js";
 import * as session from "./session.js";
 import { syncJetzt, syncAutomatikStarten, onSynchronisiert } from "./sync.js";
@@ -95,6 +95,11 @@ const ezFehler = el("ez-fehler");
 const ezEinzahlenBtn = el("ez-einzahlen-btn");
 const ezTabelleBody = document.querySelector("#ez-tabelle tbody");
 
+const npProduktAuswahl = el("np-produkt-auswahl");
+const npProduktMengeFeld = el("np-produkt-menge-feld");
+const npProduktPreisFeld = el("np-produkt-preis-feld");
+const npPositionHinzufuegenBtn = el("np-position-hinzufuegen-btn");
+const npPositionenListe = el("np-positionen-liste");
 const npBezahltFeld = el("np-bezahlt-feld");
 const npErhaltenFeld = el("np-erhalten-feld");
 const npKommentarFeld = el("np-kommentar-feld");
@@ -135,10 +140,11 @@ const WOCHENTAG_LABEL = { 1: "Montag", 2: "Dienstag", 3: "Mittwoch", 4: "Donners
 let produkteCache = [];
 let benutzerCache = [];
 let warenkorb = []; // {produktId, name, menge, einzelpreis, einkaufspreis, mwstSatz, istHelferpreis, pfandBetrag, istPfandrueckgabe}
+let nachbestellungPositionen = []; // {produktId, name, menge, einzelpreis (netto, oder null), mwstSatz (oder null), preisBrutto (nur fuer die Anzeige)}
 let helferpreisAktiv = false;
 let angemeldeterKandidat = null; // Benutzer, dessen PIN gerade eingegeben wird
 let pinEingabe = "";
-let aktuelleAnsicht = "login"; // 'login' | 'verkauf' | 'storno' | 'kassensturz' | 'schiedsrichter' | 'einzahlen' | 'termine'
+let aktuelleAnsicht = "login"; // 'login' | 'verkauf' | 'storno' | 'kassensturz' | 'schiedsrichter' | 'einzahlen' | 'nachbestellung' | 'termine'
 let letzterKassensturzSoll = 0;
 let vorgaengeCache = []; // fuer Storno-Ansicht
 let abgelehnteKassenvorschlaege = new Set(); // "schluessel" bereits verworfener Vorschlaege
@@ -339,6 +345,7 @@ function nachAnmeldungAnzeigen() {
   tabNachbestellung.style.display = benutzer.ist_admin ? "" : "none";
   kasseAuswahl.value = session.getAktiveKasse();
   warenkorb = [];
+  nachbestellungPositionen = [];
   helferpreisAktiv = false;
   abgelehnteKassenvorschlaege = new Set();
   zeigeHauptView("verkauf");
@@ -348,6 +355,7 @@ function nachAnmeldungAnzeigen() {
 function abmelden() {
   session.abmelden();
   warenkorb = [];
+  nachbestellungPositionen = [];
   helferpreisAktiv = false;
   renderLoginNutzer();
   zeigeHauptView("login");
@@ -923,12 +931,80 @@ async function bargeldEinzahlen() {
 }
 
 // ---------------------------------------------------------------------
-// Lieferanten-Pfand (Nachbestellungen) - nur fuer Administratoren. Anders
-// als Bargeld-Einzahlungen nicht an eine Kasse gebunden (siehe repo.js).
+// Nachbestellungen (Produkte + Lieferanten-Pfand) - nur fuer
+// Administratoren. Anders als Bargeld-Einzahlungen nicht an eine Kasse
+// gebunden (siehe repo.js). Die Produkt-Positionen (nachbestellungPositionen,
+// Zustand oben) werden client-seitig gesammelt - genau wie der Warenkorb
+// beim Verkauf - und erst beim Bestaetigen (nachbestellungErfassen) auf
+// einmal an repo.lieferantenPfandErfassen uebergeben.
 // ---------------------------------------------------------------------
+
+function renderNachbestellungProduktAuswahl() {
+  const bisherigeAuswahl = npProduktAuswahl.value;
+  npProduktAuswahl.innerHTML = "";
+  for (const p of produkteCache) {
+    const option = document.createElement("option");
+    option.value = p.id;
+    option.textContent = `${KATEGORIE_LABEL[p.kategorie] ?? p.kategorie}: ${p.name}`;
+    npProduktAuswahl.appendChild(option);
+  }
+  if ([...npProduktAuswahl.options].some((o) => o.value === bisherigeAuswahl)) {
+    npProduktAuswahl.value = bisherigeAuswahl;
+  }
+}
+
+function renderNachbestellungPositionenListe() {
+  npPositionenListe.innerHTML = "";
+  for (const position of nachbestellungPositionen) {
+    const div = document.createElement("div");
+    div.className = "warenkorb-zeile";
+
+    const name = document.createElement("div");
+    name.className = "name";
+    name.textContent =
+      `${position.name} × ${position.menge}` +
+      (position.einzelpreis != null ? ` (${euro(position.preisBrutto)}/Stück)` : "");
+    div.appendChild(name);
+
+    const entfernenBtn = document.createElement("button");
+    entfernenBtn.type = "button";
+    entfernenBtn.className = "mini";
+    entfernenBtn.textContent = "✕";
+    entfernenBtn.onclick = () => {
+      nachbestellungPositionen = nachbestellungPositionen.filter((p) => p !== position);
+      renderNachbestellungPositionenListe();
+    };
+    div.appendChild(entfernenBtn);
+
+    npPositionenListe.appendChild(div);
+  }
+}
+
+function nachbestellungPositionHinzufuegen() {
+  const produktId = npProduktAuswahl.value;
+  const produkt = produkteCache.find((p) => p.id === produktId);
+  if (!produkt) return;
+  const menge = Math.max(1, Math.round(parseFloat(npProduktMengeFeld.value) || 1));
+  const preisBrutto = parseFloat(npProduktPreisFeld.value) || 0;
+  const einzelpreis = preisBrutto > 0 ? nettoPreis(preisBrutto, produkt.mwst_satz) : null;
+  const mwstSatz = preisBrutto > 0 ? produkt.mwst_satz : null;
+  nachbestellungPositionen.push({
+    produktId,
+    name: produkt.name,
+    menge,
+    einzelpreis,
+    mwstSatz,
+    preisBrutto,
+  });
+  npProduktMengeFeld.value = "1";
+  npProduktPreisFeld.value = "";
+  renderNachbestellungPositionenListe();
+}
 
 async function renderNachbestellungen() {
   npFehler.textContent = "";
+  renderNachbestellungProduktAuswahl();
+  renderNachbestellungPositionenListe();
 
   const alle = await repo.letzteLieferantenPfandEintraege(500);
   const stornierteIds = new Set(alle.filter((e) => e.storno_von).map((e) => e.storno_von));
@@ -942,8 +1018,19 @@ async function renderNachbestellungen() {
     else if (stornierteIds.has(eintrag.id)) status = "Storniert";
     if (status !== "Aktiv") tr.classList.add("storniert");
 
+    const positionen = await repo.nachbestellungPositionen(eintrag.id);
+    const produkteText = positionen.length
+      ? positionen
+          .map((p) => {
+            const produkt = produkteCache.find((pr) => pr.id === p.produkt_id);
+            return `${produkt ? produkt.name : "?"} × ${p.menge}`;
+          })
+          .join(", ")
+      : "—";
+
     const zellen = [
       formatDatumUhrzeit(eintrag.datum),
+      produkteText,
       euro(eintrag.bezahlt),
       euro(eintrag.erhalten),
       status,
@@ -964,7 +1051,8 @@ async function renderNachbestellungen() {
         const ok = await zeigeBestaetigung(
           "Nachbestellung stornieren?",
           `Die Nachbestellung vom ${formatDatumUhrzeit(eintrag.datum)} (bezahlt: ${euro(eintrag.bezahlt)}, ` +
-            `zurückerhalten: ${euro(eintrag.erhalten)}) wird storniert. Das kann nicht rückgängig gemacht werden.`,
+            `zurückerhalten: ${euro(eintrag.erhalten)}) wird storniert, etwaige Produkt-Positionen werden ` +
+            "automatisch zurückgebucht. Das kann nicht rückgängig gemacht werden.",
           "Stornieren"
         );
         if (!ok) return;
@@ -993,7 +1081,13 @@ async function nachbestellungErfassen() {
       bezahlt,
       erhalten,
       npKommentarFeld.value.trim(),
-      benutzer.name
+      benutzer.name,
+      nachbestellungPositionen.map((p) => ({
+        produktId: p.produktId,
+        menge: p.menge,
+        einzelpreis: p.einzelpreis,
+        mwstSatz: p.mwstSatz,
+      }))
     );
   } catch (exc) {
     npFehler.textContent = exc.message ?? String(exc);
@@ -1003,6 +1097,7 @@ async function nachbestellungErfassen() {
   npErhaltenFeld.value = "";
   npKommentarFeld.value = "";
   npFehler.textContent = "";
+  nachbestellungPositionen = [];
   renderNachbestellungen();
 }
 
@@ -1184,6 +1279,8 @@ async function nachSyncAktualisieren() {
     renderSchiedsrichter();
   } else if (aktuelleAnsicht === "einzahlen") {
     renderEinzahlungen();
+  } else if (aktuelleAnsicht === "nachbestellung") {
+    renderNachbestellungen();
   } else if (aktuelleAnsicht === "termine") {
     renderTermine();
   }
@@ -1297,6 +1394,7 @@ function wireEvents() {
   tabTermine.onclick = () => zeigeHauptView("termine");
   srAuszahlenBtn.onclick = schiedsrichterAuszahlen;
   ezEinzahlenBtn.onclick = bargeldEinzahlen;
+  npPositionHinzufuegenBtn.onclick = nachbestellungPositionHinzufuegen;
   npErfassenBtn.onclick = nachbestellungErfassen;
   tsEintragenBtn.onclick = heimspielEintragen;
 

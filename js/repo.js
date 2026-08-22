@@ -50,12 +50,24 @@ export async function benutzerAnmelden(benutzerId, pin) {
 }
 
 // ---------------------------------------------------------------------
-// Lagerbewegungen (nur der automatische Warenausgang beim Verkauf sowie
-// die Korrektur-Gegenbuchung bei einem Storno - Pendant zu
-// repository._lagerbewegung_erfassen)
+// Lagerbewegungen - urspruenglich nur der automatische Warenausgang beim
+// Verkauf sowie die Korrektur-Gegenbuchung bei einem Storno (Pendant zu
+// repository._lagerbewegung_erfassen); seit den erweiterten
+// Nachbestellungen (siehe unten) bucht das Tablet darueber auch echte
+// Wareneingaenge, optional mit Preis/MwSt.-Satz - deshalb jetzt exportiert
+// und mit denselben optionalen Preis-Parametern wie am Rechner.
 // ---------------------------------------------------------------------
 
-async function lagerbewegungErfassen(produktId, typ, menge, kommentar, benutzerName, gid) {
+export async function lagerbewegungErfassen(
+  produktId,
+  typ,
+  menge,
+  kommentar,
+  benutzerName,
+  gid,
+  einzelpreis = null,
+  mwstSatz = null
+) {
   await put("lagerbewegungen", {
     id: neueId(),
     produkt_id: produktId,
@@ -68,8 +80,8 @@ async function lagerbewegungErfassen(produktId, typ, menge, kommentar, benutzerN
     geraet_id: gid,
     synced: false,
     synced_at: null,
-    einzelpreis: null,
-    mwst_satz: null,
+    einzelpreis,
+    mwst_satz: mwstSatz,
     benutzer: benutzerName,
   });
 }
@@ -378,11 +390,27 @@ async function bargeldEinzahlungenSumme(veranstaltung, seit) {
 // Storno, nie durch Aendern/Loeschen.
 // ---------------------------------------------------------------------
 
-export async function lieferantenPfandErfassen(bezahlt, erhalten, kommentar, benutzerName) {
+// positionen: optionale Liste von {produktId, menge, einzelpreis, mwstSatz}
+// - die nachbestellten Produkte (Getraenke UND Speisen), analog zu
+// repository.lieferanten_pfand_erfassen. einzelpreis (Netto-Preis pro
+// Stueck) und mwstSatz sind optional; fuer jede Position mit menge > 0 wird
+// zusaetzlich ein echter Wareneingang gebucht (siehe lagerbewegungErfassen
+// oben) - der Warenbestand aktualisiert sich dadurch direkt.
+export async function lieferantenPfandErfassen(
+  bezahlt,
+  erhalten,
+  kommentar,
+  benutzerName,
+  positionen = []
+) {
   bezahlt = rund2(bezahlt || 0);
   erhalten = rund2(erhalten || 0);
-  if (bezahlt === 0 && erhalten === 0) {
-    throw new Error("Bitte mindestens einen der beiden Beträge angeben.");
+  positionen = (positionen || []).filter((p) => p.menge);
+  if (bezahlt === 0 && erhalten === 0 && positionen.length === 0) {
+    throw new Error(
+      "Bitte mindestens einen Betrag (bezahlt/zurückerhalten) oder eine " +
+        "Produktposition angeben."
+    );
   }
   const id = neueId();
   const gid = await geraetId();
@@ -399,12 +427,40 @@ export async function lieferantenPfandErfassen(bezahlt, erhalten, kommentar, ben
     synced_at: null,
     benutzer: benutzerName,
   });
+  for (const position of positionen) {
+    await put("nachbestellung_positionen", {
+      id: neueId(),
+      nachbestellung_id: id,
+      produkt_id: position.produktId,
+      menge: position.menge,
+      einzelpreis: position.einzelpreis ?? null,
+      mwst_satz: position.mwstSatz ?? null,
+      geraet_id: gid,
+      synced: false,
+      synced_at: null,
+    });
+    await lagerbewegungErfassen(
+      position.produktId,
+      "Wareneingang",
+      position.menge,
+      kommentar || "Nachbestellung",
+      benutzerName,
+      gid,
+      position.einzelpreis ?? null,
+      position.mwstSatz ?? null
+    );
+  }
   return id;
 }
 
 export async function letzteLieferantenPfandEintraege(limit = 30) {
   const alle = await getAll("lieferanten_pfand");
   return alle.sort((a, b) => (a.datum < b.datum ? 1 : -1)).slice(0, limit);
+}
+
+export async function nachbestellungPositionen(nachbestellungId) {
+  const alle = await getAll("nachbestellung_positionen");
+  return alle.filter((p) => p.nachbestellung_id === nachbestellungId);
 }
 
 export async function lieferantenPfandIstStorniert(eintragId) {
@@ -419,14 +475,16 @@ export async function lieferantenPfandStornieren(eintragId, benutzerName, kommen
   if (await lieferantenPfandIstStorniert(eintragId)) {
     throw new Error("Dieser Eintrag wurde bereits storniert.");
   }
+  const positionen = await nachbestellungPositionen(eintragId);
   const stornoId = neueId();
   const gid = await geraetId();
+  const stornoKommentar = kommentar || `Storno zu Nachbestellung ${eintragId}`;
   await put("lieferanten_pfand", {
     id: stornoId,
     datum: jetzt(),
     bezahlt: -eintrag.bezahlt,
     erhalten: -eintrag.erhalten,
-    kommentar: kommentar || `Storno zu Nachbestellung ${eintragId}`,
+    kommentar: stornoKommentar,
     storno_von: eintragId,
     rechner: GERAET_NAME,
     geraet_id: gid,
@@ -434,6 +492,27 @@ export async function lieferantenPfandStornieren(eintragId, benutzerName, kommen
     synced_at: null,
     benutzer: benutzerName,
   });
+  for (const position of positionen) {
+    await put("nachbestellung_positionen", {
+      id: neueId(),
+      nachbestellung_id: stornoId,
+      produkt_id: position.produkt_id,
+      menge: -position.menge,
+      einzelpreis: position.einzelpreis,
+      mwst_satz: position.mwst_satz,
+      geraet_id: gid,
+      synced: false,
+      synced_at: null,
+    });
+    await lagerbewegungErfassen(
+      position.produkt_id,
+      "Korrektur",
+      -position.menge,
+      stornoKommentar,
+      benutzerName,
+      gid
+    );
+  }
   return stornoId;
 }
 

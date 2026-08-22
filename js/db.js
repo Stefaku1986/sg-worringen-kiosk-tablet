@@ -11,12 +11,13 @@
 // Push-dann-Pull-Prinzip wie kiosk/sync.py).
 
 const DB_NAME = "sg-worringen-kiosk-tablet";
-// Version 4 (seit "Nachbestellungen"/Lieferanten-Pfand-Funktion): neuer
-// Store "lieferanten_pfand" hinzugefuegt. Ein IndexedDB-"onupgradeneeded"
-// laeuft nur beim Erstoeffnen ODER bei einer hoeheren Versionsnummer als
-// zuvor - deshalb muss diese Zahl bei jedem neuen Store erhoeht werden,
-// sonst bleiben bereits installierte Tablets bei den alten Stores haengen.
-const DB_VERSION = 4;
+// Version 5 (seit den erweiterten Nachbestellungen mit Produkt-Positionen):
+// neuer Store "nachbestellung_positionen" hinzugefuegt. Ein IndexedDB-
+// "onupgradeneeded" laeuft nur beim Erstoeffnen ODER bei einer hoeheren
+// Versionsnummer als zuvor - deshalb muss diese Zahl bei jedem neuen Store
+// erhoeht werden, sonst bleiben bereits installierte Tablets bei den alten
+// Stores haengen.
+const DB_VERSION = 5;
 
 // Bewusst ohne zusaetzliche Indizes: bei den ueberschaubaren Datenmengen
 // eines Vereins-Kiosks ist ein einfaches getAll() + Filtern in JavaScript
@@ -28,6 +29,7 @@ const STORES = {
   schiedsrichter_auszahlungen: { keyPath: "id" },
   bargeld_einzahlungen: { keyPath: "id" },
   lieferanten_pfand: { keyPath: "id" },
+  nachbestellung_positionen: { keyPath: "id" },
   kassiervorgaenge: { keyPath: "id" },
   positionen: { keyPath: "id" },
   lagerbewegungen: { keyPath: "id" },
