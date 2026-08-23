@@ -14,7 +14,7 @@ export const SUPABASE_ANON_KEY = "sb_publishable_UGRAXILrHUkfckecBNXLrQ_6Mgrq_sQ
 // analog zur Fenstertitel-Versionsanzeige der Windows-App (kiosk/__version__.py).
 // Bei sichtbaren Aenderungen an der Tablet-App bitte erhoehen (z.B. 1.1.0
 // fuer neue Funktionen, 1.0.1 fuer reine Bugfixes).
-export const APP_VERSION = "1.12.0";
+export const APP_VERSION = "1.12.1";
 
 // Feste ID eines einzigen, bewusst deaktivierten Pseudo-Produkts
 // "Pfandrückgabe (pauschal)" (pfand_betrag = 2,00 €), einmalig direkt in
@@ -23,6 +23,17 @@ export const APP_VERSION = "1.12.0";
 // "Pfand zurückgeben"-Knopf bucht damit ab Version 1.4.0 sofort eine
 // pauschale Rückgabe, ohne dass zuvor eine Flasche ausgewaehlt werden muss.
 export const PFAND_RUECKGABE_PRODUKT_ID = "381da34f-d563-45f5-ad65-7b4e1b0c6877";
+
+// Runde 33: feste IDs der beiden Wasser-Sorten, die Schiedsrichter
+// kostenlos erhalten koennen (siehe kiosk/repository.py
+// SCHIEDSRICHTER_WASSER_STILL_PRODUKT_ID/SCHIEDSRICHTER_WASSER_MEDIUM_PRODUKT_ID,
+// identisch auf Windows und Tablet). Anders als PFAND_RUECKGABE_PRODUKT_ID
+// sind das ganz normale, aktive, lagergeführte Produkte. Die Knöpfe
+// "Wasser (still)/(medium) für Schiedsrichter" im Reiter "Schiedsrichter"
+// buchen damit sofort eine kostenlose Auszahlung (Betrag 0, ein Stück),
+// ohne Dialog.
+export const SCHIEDSRICHTER_WASSER_STILL_PRODUKT_ID = "1804076f-009f-46e4-a93c-3e647dfcc391";
+export const SCHIEDSRICHTER_WASSER_MEDIUM_PRODUKT_ID = "a018c117-f967-44b0-955a-e5d0bbaa0f24";
 
 // Wie am Rechner: die Kassen, zwischen denen umgeschaltet werden kann.
 export const VERANSTALTUNGEN = ["Jugend", "Senioren"];

@@ -3,7 +3,14 @@
 // Schritt: einfaches DOM-Handling, wie es fuer eine kleine Kiosk-App
 // voellig ausreicht.
 
-import { APP_VERSION, SYNC_INTERVAL_SECONDS, TEAMS, FEEDBACK_STATUS_LABEL } from "./config.js";
+import {
+  APP_VERSION,
+  SYNC_INTERVAL_SECONDS,
+  TEAMS,
+  FEEDBACK_STATUS_LABEL,
+  SCHIEDSRICHTER_WASSER_STILL_PRODUKT_ID,
+  SCHIEDSRICHTER_WASSER_MEDIUM_PRODUKT_ID,
+} from "./config.js";
 import { euro, deZahl, nettoPreis } from "./format.js";
 import * as repo from "./repo.js";
 import * as session from "./session.js";
@@ -109,16 +116,12 @@ const srKasseName = el("sr-kasse-name");
 const srMannschaftFeld = el("sr-mannschaft-feld");
 const srNameFeld = el("sr-name-feld");
 const srBetragFeld = el("sr-betrag-feld");
-const srKostenlosProduktFeld = el("sr-kostenlos-produkt-feld");
-const srKostenlosMengeFeld = el("sr-kostenlos-menge-feld");
 const srKommentarFeld = el("sr-kommentar-feld");
 const srFehler = el("sr-fehler");
 const srAuszahlenBtn = el("sr-auszahlen-btn");
+const srWasserStillBtn = el("sr-wasser-still-btn");
+const srWasserMediumBtn = el("sr-wasser-medium-btn");
 const srTabelleBody = document.querySelector("#sr-tabelle tbody");
-
-srKostenlosProduktFeld.onchange = () => {
-  srKostenlosMengeFeld.disabled = !srKostenlosProduktFeld.value;
-};
 
 const ezKasseName = el("ez-kasse-name");
 const ezBetragFeld = el("ez-betrag-feld");
@@ -937,21 +940,6 @@ async function renderSchiedsrichter() {
   srKasseName.textContent = KASSE_LABEL[aktiveKasse] ?? aktiveKasse;
   srFehler.textContent = "";
 
-  // Runde 33: Produkt-Auswahl fuer kostenlose Artikel (z.B. Wasser) frisch
-  // befuellen - inaktive Produkte werden hier bewusst nicht angeboten
-  // (nur fuer die Anzeige/den Namen aelterer Auszahlungen unten relevant).
-  const produkte = await repo.listeProdukte();
-  const bisherigeAuswahl = srKostenlosProduktFeld.value;
-  srKostenlosProduktFeld.innerHTML = '<option value="">– kein kostenloser Artikel –</option>';
-  for (const p of produkte) {
-    const option = document.createElement("option");
-    option.value = p.id;
-    option.textContent = p.name;
-    srKostenlosProduktFeld.appendChild(option);
-  }
-  srKostenlosProduktFeld.value = bisherigeAuswahl;
-  srKostenlosMengeFeld.disabled = !srKostenlosProduktFeld.value;
-
   const alle = await repo.letzteSchiedsrichterAuszahlungen(500);
   const stornierteIds = new Set(alle.filter((a) => a.storno_von).map((a) => a.storno_von));
   const anzeige = alle.filter((a) => a.veranstaltung === aktiveKasse).slice(0, 50);
@@ -1015,20 +1003,9 @@ async function renderSchiedsrichter() {
 }
 
 async function schiedsrichterAuszahlen() {
-  const betragEingabe = srBetragFeld.value.trim();
-  const betrag = betragEingabe === "" ? 0 : parseFloat(betragEingabe);
-  if (isNaN(betrag) || betrag < 0) {
-    srFehler.textContent = "Bitte einen gültigen Betrag (0 oder größer) eingeben.";
-    return;
-  }
-  const kostenlosProduktId = srKostenlosProduktFeld.value || null;
-  const kostenlosMenge = kostenlosProduktId ? parseInt(srKostenlosMengeFeld.value, 10) : null;
-  if (kostenlosProduktId && (isNaN(kostenlosMenge) || kostenlosMenge <= 0)) {
-    srFehler.textContent = "Bitte eine gültige Menge größer als 0 für den kostenlosen Artikel eingeben.";
-    return;
-  }
-  if (betrag <= 0 && !kostenlosProduktId) {
-    srFehler.textContent = "Bitte einen Betrag größer als 0 und/oder kostenlose Artikel angeben.";
+  const betrag = parseFloat(srBetragFeld.value);
+  if (isNaN(betrag) || betrag <= 0) {
+    srFehler.textContent = "Bitte einen gültigen Betrag größer als 0 eingeben.";
     return;
   }
   const benutzer = session.getAktuellerBenutzer();
@@ -1039,9 +1016,7 @@ async function schiedsrichterAuszahlen() {
       srMannschaftFeld.value.trim(),
       srNameFeld.value.trim(),
       srKommentarFeld.value.trim(),
-      benutzer.name,
-      kostenlosProduktId,
-      kostenlosMenge
+      benutzer.name
     );
   } catch (exc) {
     srFehler.textContent = exc.message ?? String(exc);
@@ -1050,11 +1025,34 @@ async function schiedsrichterAuszahlen() {
   srMannschaftFeld.value = "";
   srNameFeld.value = "";
   srBetragFeld.value = "";
-  srKostenlosProduktFeld.value = "";
-  srKostenlosMengeFeld.value = "1";
-  srKostenlosMengeFeld.disabled = true;
   srKommentarFeld.value = "";
   srFehler.textContent = "";
+  renderSchiedsrichter();
+}
+
+// Runde 33: Ein-Klick-Ausgabe einer Flasche Wasser (still oder medium) an
+// einen Schiedsrichter - kein Formular, sofort gebucht (analog zum
+// "Pfand zurückgeben"-Knopf im Reiter "Verkauf"). Bucht eine kostenlose
+// Auszahlung (Betrag 0, ein Stück) inkl. automatischer Bestandskorrektur;
+// ueber die Uebersichtstabelle wie gewohnt stornierbar.
+async function schiedsrichterWasserAusgeben(produktId) {
+  srFehler.textContent = "";
+  const benutzer = session.getAktuellerBenutzer();
+  try {
+    await repo.schiedsrichterAuszahlungErfassen(
+      session.getAktiveKasse(),
+      0,
+      "",
+      "",
+      "",
+      benutzer.name,
+      produktId,
+      1
+    );
+  } catch (exc) {
+    srFehler.textContent = exc.message ?? String(exc);
+    return;
+  }
   renderSchiedsrichter();
 }
 
@@ -1928,6 +1926,8 @@ function wireEvents() {
   tabTermine.onclick = () => zeigeHauptView("termine");
   tabFeedback.onclick = () => zeigeHauptView("feedback");
   srAuszahlenBtn.onclick = schiedsrichterAuszahlen;
+  srWasserStillBtn.onclick = () => schiedsrichterWasserAusgeben(SCHIEDSRICHTER_WASSER_STILL_PRODUKT_ID);
+  srWasserMediumBtn.onclick = () => schiedsrichterWasserAusgeben(SCHIEDSRICHTER_WASSER_MEDIUM_PRODUKT_ID);
   ezEinzahlenBtn.onclick = bargeldEinzahlen;
   saErfassenBtn.onclick = ausgabeErfassen;
   beErfassenBtn.onclick = entnahmeErfassen;
