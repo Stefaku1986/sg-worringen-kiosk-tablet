@@ -51,9 +51,11 @@ const tabFeedback = el("tab-feedback");
 // sind, um die Reiterleiste kuerzer zu machen (analog zum "Admin"-Reiter
 // der Windows-App, dort aber nach Admin-Rechten gruppiert - auf dem
 // Tablet ist bis auf "nachbestellung" alles hier fuer alle Helfer
-// sichtbar, es geht nur um weniger Reiter oben, siehe unten).
+// sichtbar, es geht nur um weniger Reiter oben, siehe unten). Runde 34:
+// "schiedsrichter" ist auf Nutzerwunsch wieder ein eigener, direkt
+// sichtbarer Reiter oben (wie auf der Windows-App) und deshalb hier
+// NICHT mehr mit drin.
 const MEHR_ANSICHTEN = [
-  "schiedsrichter",
   "einzahlen",
   "ausgaben",
   "entnahmen",
@@ -1912,10 +1914,11 @@ function wireEvents() {
     // Nicht-Administratoren duerfen "nachbestellung" nicht sehen - falls
     // das (aus einer vorherigen Admin-Anmeldung in derselben Sitzung) die
     // zuletzt gewaehlte Unteransicht war, stattdessen die erste sichtbare
-    // Unteransicht oeffnen.
+    // Unteransicht oeffnen. "schiedsrichter" ist seit Runde 34 kein Teil
+    // von "Mehr" mehr, daher hier nicht mehr als Ziel moeglich.
     const benutzer = session.getAktuellerBenutzer();
-    let ziel = letzteMehrAnsicht || "schiedsrichter";
-    if (ziel === "nachbestellung" && !benutzer?.ist_admin) ziel = "schiedsrichter";
+    let ziel = letzteMehrAnsicht || "einzahlen";
+    if (ziel === "nachbestellung" && !benutzer?.ist_admin) ziel = "einzahlen";
     zeigeHauptView(ziel);
   };
   tabSchiedsrichter.onclick = () => zeigeHauptView("schiedsrichter");
