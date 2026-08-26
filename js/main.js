@@ -449,6 +449,14 @@ async function pinBestaetigen() {
   session.anmelden(benutzer);
   pinEingabe = "";
   angemeldeterKandidat = null;
+  // Runde 38: PIN-Eingabefeld muss hier explizit wieder verstecken werden -
+  // zeigeHauptView("verkauf") (in nachAnmeldungAnzeigen) versteckt nur den
+  // gesamten Login-Bildschirm (loginView), nicht dieses einzelne Kindelement.
+  // loginPinEingabe.style.display blieb dadurch bisher auf "" (sichtbar)
+  // stehen, obwohl der Ziffernblock laengst nicht mehr zu sehen war - siehe
+  // Fix weiter unten beim globalen keydown-Listener fuer den Grund, warum
+  // das schwerwiegende Folgen hatte.
+  loginPinEingabe.style.display = "none";
   nachAnmeldungAnzeigen();
 }
 
@@ -479,7 +487,17 @@ function abmelden() {
 }
 
 // Globale Tastatur-Unterstuetzung fuer die PIN-Eingabe (Ziffernblock,
-// Enter zum Bestaetigen, Escape zum Zurueckgehen).
+// Enter zum Bestaetigen, Escape zum Zurueckgehen). WICHTIG: dieser Listener
+// haengt am gesamten document und faengt Ziffern-/Backspace-/Enter-Tasten
+// ab (inkl. preventDefault!), solange die Bedingung unten nicht zutrifft -
+// er MUSS also zuverlaessig "aus" sein, sobald der PIN-Bildschirm nicht
+// mehr angezeigt wird. Runde 38: genau das war bis hierhin nicht der Fall
+// (siehe Fix in pinBestaetigen()) - loginPinEingabe.style.display blieb
+// nach erfolgreichem Login auf "" stehen, wodurch dieser Listener fuer die
+// gesamte restliche Sitzung JEDE Zifferntaste app-weit abgefangen und per
+// preventDefault() verschluckt hat, bevor sie ein normales Eingabefeld
+// (Bezahlen "Gegeben", Kassensturz "Gezaehlt", ...) erreichen konnte -
+// exakte Ursache des gemeldeten "Numpad nimmt keine Zahlen an".
 document.addEventListener("keydown", (ev) => {
   if (loginPinEingabe.style.display === "none") return;
   if (ev.key >= "0" && ev.key <= "9") {
