@@ -390,6 +390,20 @@ button.btn-primaer:active {
   background: white;
   font-weight: 700;
 }
+/* Runde 38 (Feedback #2): Checkbox "Marke vorhanden" zum Pfand-Erlass je
+   Warenkorb-Zeile. */
+.pfand-erlass-feld {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+  color: var(--text-dunkel);
+  white-space: nowrap;
+}
+.pfand-erlass-feld input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+}
 #summe {
   font-size: 22px;
   font-weight: 700;

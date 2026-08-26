@@ -575,8 +575,16 @@ function renderProduktGrid() {
 function warenkorbHinzufuegen(produkt) {
   const istHelfer = helferpreisAktiv;
   const einzelpreis = istHelfer ? produkt.helferpreis ?? produkt.verkaufspreis : produkt.verkaufspreis;
+  // Runde 38 (Feedback #2): eine Zeile mit bereits erlassenem Pfand (Kunde
+  // hat schon eine bezahlte Marke) darf beim erneuten Antippen des Produkts
+  // NICHT einfach mit hochgezaehlt werden - sonst wuerde ein zweites,
+  // eigentlich normal zu bezahlendes Getraenk versehentlich auch pfandfrei
+  // werden. Ein neuer Klick landet deshalb immer in einer eigenen (oder
+  // neuen) Nicht-Erlass-Zeile, analog zur bestehenden istHelferpreis-
+  // Trennung.
   const bestehend = warenkorb.find(
-    (z) => z.produktId === produkt.id && z.istHelferpreis === istHelfer && !z.istPfandrueckgabe
+    (z) => z.produktId === produkt.id && z.istHelferpreis === istHelfer
+      && !z.istPfandrueckgabe && !z.pfandErlassen
   );
   if (bestehend) {
     bestehend.menge += 1;
@@ -593,11 +601,29 @@ function warenkorbHinzufuegen(produkt) {
       // zahlen fuer ihr eigenes Getraenk keinen Pfandbetrag, unabhaengig
       // davon, ob das Produkt normalerweise pfandpflichtig ist.
       pfandBetrag: istHelfer ? 0 : produkt.pfand_betrag || 0,
+      // Runde 38: urspruenglicher Pfandbetrag des Produkts, unabhaengig von
+      // Helferpreis/Erlass - wird gebraucht, um "Pfandmarke vorhanden"
+      // wieder abzuwaehlen und pfandBetrag korrekt zurueckzusetzen.
+      pfandBetragOhneErlass: produkt.pfand_betrag || 0,
+      pfandErlassen: false,
       istPfandrueckgabe: false,
     });
   }
   helferpreisAktiv = false;
   helferpreisBtn.classList.remove("aktiv");
+  renderWarenkorb();
+}
+
+// Feedback #2 (Runde 38): Kunde haelt bereits eine bezahlte, unretournierte
+// Pfandmarke - das Pfand fuer diese Warenkorb-Zeile wird dadurch erlassen.
+// Setzt pfandBetrag direkt auf 0 (bzw. beim Abwaehlen zurueck auf den
+// urspruenglichen Produkt-Pfandbetrag) - genau das gleiche Prinzip wie beim
+// bestehenden Helferpreis. Dadurch muessen weder warenkorbSumme() noch
+// repo.kassiervorgangAbschliessen() etwas von diesem neuen Zustand wissen -
+// sie lesen wie bisher einfach pfandBetrag.
+function warenkorbPfandErlassUmschalten(zeile, erlassen) {
+  zeile.pfandErlassen = erlassen;
+  zeile.pfandBetrag = erlassen ? 0 : zeile.pfandBetragOhneErlass || 0;
   renderWarenkorb();
 }
 
@@ -654,7 +680,26 @@ function renderWarenkorb() {
       name.style.color = "var(--rot)";
     } else {
       const pfandHinweis = zeile.pfandBetrag ? ` +${euro(zeile.pfandBetrag)} Pfand` : "";
-      name.textContent = `${zeile.name} (${euro(zeile.einzelpreis)}${pfandHinweis})`;
+      const erlassHinweis = zeile.pfandErlassen ? " (Pfandmarke vorhanden)" : "";
+      name.textContent = `${zeile.name} (${euro(zeile.einzelpreis)}${pfandHinweis})${erlassHinweis}`;
+    }
+
+    // Feedback #2 (Runde 38): Checkbox zum Erlassen des Pfands, nur bei
+    // pfandpflichtigen Artikeln, die weder Helferpreis noch Pfandrueckgabe
+    // sind (genau wie im Windows-Pendant _baue_pfand_widget).
+    let pfandMarkeLabel = null;
+    if (zeile.pfandBetragOhneErlass && !zeile.istHelferpreis && !zeile.istPfandrueckgabe) {
+      pfandMarkeLabel = document.createElement("label");
+      pfandMarkeLabel.className = "pfand-erlass-feld";
+      const checkbox = document.createElement("input");
+      checkbox.type = "checkbox";
+      checkbox.checked = !!zeile.pfandErlassen;
+      checkbox.title =
+        `Kunde hat bereits eine bezahlte Pfandmarke (${euro(zeile.pfandBetragOhneErlass)}) - `
+        + "kein Pfand für diese Zeile berechnen.";
+      checkbox.onchange = () => warenkorbPfandErlassUmschalten(zeile, checkbox.checked);
+      pfandMarkeLabel.appendChild(checkbox);
+      pfandMarkeLabel.appendChild(document.createTextNode(" Marke vorhanden"));
     }
 
     const minus = document.createElement("button");
@@ -691,6 +736,9 @@ function renderWarenkorb() {
     };
 
     div.appendChild(name);
+    if (pfandMarkeLabel) {
+      div.appendChild(pfandMarkeLabel);
+    }
     div.appendChild(minus);
     div.appendChild(menge);
     div.appendChild(plus);

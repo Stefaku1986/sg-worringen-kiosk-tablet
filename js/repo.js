@@ -142,6 +142,10 @@ export async function kassiervorgangAbschliessen(veranstaltung, warenkorb, gegeb
       ist_helferpreis: position.istHelferpreis ? 1 : 0,
       pfand_betrag: position.pfandBetrag || 0,
       ist_pfandrueckgabe: position.istPfandrueckgabe ? 1 : 0,
+      // Runde 38 (Feedback #2): Kunde hatte bereits eine bezahlte
+      // Pfandmarke - rein informativ, die Geldwirkung steckt schon in
+      // pfand_betrag = 0 (siehe warenkorbPfandErlassUmschalten in main.js).
+      pfand_erlassen: position.pfandErlassen ? 1 : 0,
       geraet_id: gid,
       synced: false,
       synced_at: null,
@@ -214,6 +218,7 @@ export async function vorgangStornieren(vorgangId, benutzerName, kommentar = nul
       ist_helferpreis: pos.ist_helferpreis,
       pfand_betrag: pos.pfand_betrag || 0,
       ist_pfandrueckgabe: pos.ist_pfandrueckgabe || 0,
+      pfand_erlassen: pos.pfand_erlassen || 0,
       geraet_id: gid,
       synced: false,
       synced_at: null,

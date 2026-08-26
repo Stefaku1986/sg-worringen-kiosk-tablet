@@ -58,7 +58,7 @@ const ALLE_TABELLEN = [...NUR_LESEN_TABELLEN, ...SCHREIBBARE_TABELLEN];
 const BOOL_SPALTEN = {
   produkte: ["aktiv"],
   trainingszeiten: ["aktiv"],
-  positionen: ["ist_helferpreis", "ist_pfandrueckgabe"],
+  positionen: ["ist_helferpreis", "ist_pfandrueckgabe", "pfand_erlassen"],
   benutzer: ["ist_admin", "aktiv"],
 };
 
