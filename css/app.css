@@ -46,6 +46,23 @@ button, input {
   font-size: inherit;
 }
 
+/* Runde 35: "user-select: none" oben auf <html, body> (bewusst gesetzt,
+   damit beim Antippen der Kassen-Oberflaeche nichts versehentlich als Text
+   markiert wird) wird von Formularfeldern geerbt - auf manchen
+   Android-Tablets/WebViews fuehrt das dazu, dass zwar die Bildschirm-
+   tastatur (inkl. Zahlenblock bei inputmode="decimal") erscheint, Tippen
+   aber nicht im Feld ankommt (beobachtet beim "Gegeben"-Feld im
+   Bezahlen-Dialog, betrifft aber alle Eingabefelder gleichermassen - z.B.
+   Kassensturz "Gezaehlt", Schiedsrichter/Einzahlen/Ausgaben/Entnahmen
+   "Betrag"). Fuer alle Eingabe-Elemente (auch Textarea/Select) wird die
+   normale Text-Interaktion deshalb ausdruecklich wieder erlaubt.
+   -webkit-user-select bleibt fuer Safari/aeltere WebViews wichtig, auch
+   wenn die App primaer auf Android/Chrome zielt. */
+input, textarea, select {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
 #app {
   display: flex;
   flex-direction: column;
