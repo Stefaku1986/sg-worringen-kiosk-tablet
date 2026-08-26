@@ -470,6 +470,19 @@ table.liste td.fb-status-in_bearbeitung {
   border-top: 2px solid var(--blau);
   padding-top: 10px;
 }
+/* Runde 37: kleine, rein informative Aufteilung "Jugend: X € · Senioren: Y €"
+   direkt unter einer kennzahl-zeile im kombinierten Kassensturz - zeigt,
+   wie sich der Gesamtbetrag auf die beiden Kassen aufteilt, ohne die
+   Haupt-Kennzahl optisch zu ueberladen. */
+.kennzahl-aufteilung {
+  text-align: right;
+  color: #666;
+  font-size: 12px;
+  margin: -4px 0 4px 0;
+}
+.kennzahl-aufteilung:empty {
+  margin: 0;
+}
 /* .betrag wird auf <input>-, <select>- (Team-Auswahl bei den Terminen) UND
    <textarea>-Elementen (Feedback-Text/-Antwort) verwendet - alle drei Tags
    brauchen dieselbe explizite Hell-Faerbung, sonst greift bei <select>/

@@ -100,14 +100,17 @@ const bezahlenBtn = el("bezahlen-btn");
 
 const stornoTabelleBody = document.querySelector("#storno-tabelle tbody");
 
-const ksKasseName = el("ks-kasse-name");
+const ksAnfangsbestandOverridesContainer = el("ks-anfangsbestand-overrides");
 const ksAnfangsbestand = el("ks-anfangsbestand");
+const ksAnfangsbestandAufteilung = el("ks-anfangsbestand-aufteilung");
 const ksEinnahmen = el("ks-einnahmen");
+const ksEinnahmenAufteilung = el("ks-einnahmen-aufteilung");
 const ksAuszahlungen = el("ks-auszahlungen");
 const ksSonstigeAusgaben = el("ks-sonstige-ausgaben");
 const ksEinzahlungen = el("ks-einzahlungen");
 const ksEntnahmen = el("ks-entnahmen");
 const ksSoll = el("ks-soll");
+const ksSollAufteilung = el("ks-soll-aufteilung");
 const ksGezaehltFeld = el("ks-gezaehlt-feld");
 const ksDifferenz = el("ks-differenz");
 const ksNaechsterStartFeld = el("ks-naechster-start-feld");
@@ -796,26 +799,87 @@ async function renderStornoListe() {
 // Kassensturz
 // ---------------------------------------------------------------------
 
-async function renderKassensturz() {
-  const aktiveKasse = session.getAktiveKasse();
-  ksKasseName.textContent = KASSE_LABEL[aktiveKasse] ?? aktiveKasse;
+// Zwischenspeicher der zuletzt geladenen Gesamt-Vorschau (siehe
+// renderKassensturz) - wird gebraucht, um beim Tippen in ein
+// Anfangsbestand-Override-Feld (nur bei einer Kasse, die gerade ihren
+// allerersten Kassensturz hat) das angezeigte Soll live nachzuziehen, ohne
+// alles neu aus der Datenbank zu laden.
+let ksLetzteVorschauGesamt = null;
+// {veranstaltung: <input>} - nur fuer Kassen mit istErsterKassensturz.
+let ksAnfangsbestandOverrideFelder = {};
 
-  const vorschau = await repo.kassensturzVorschau(aktiveKasse);
+async function renderKassensturz() {
+  const vorschau = await repo.kassensturzGesamtVorschau();
+  ksLetzteVorschauGesamt = vorschau;
   letzterKassensturzSoll = vorschau.soll;
 
+  const aufteilungsText = (feld, vorzeichen) =>
+    vorschau.kassen
+      .map((k) => `${KASSE_LABEL[k.veranstaltung] ?? k.veranstaltung}: ${euro(k[feld], vorzeichen)}`)
+      .join(" · ");
+
   ksAnfangsbestand.textContent = euro(vorschau.anfangsbestand);
+  ksAnfangsbestandAufteilung.textContent = aufteilungsText("anfangsbestand");
   ksEinnahmen.textContent = euro(vorschau.einnahmen, true);
+  ksEinnahmenAufteilung.textContent = aufteilungsText("einnahmen", true);
   ksAuszahlungen.textContent = euro(vorschau.auszahlungen);
   ksSonstigeAusgaben.textContent = euro(vorschau.sonstigeAusgaben);
   ksEinzahlungen.textContent = euro(vorschau.einzahlungen);
   ksEntnahmen.textContent = euro(vorschau.entnahmen);
   ksSoll.textContent = euro(vorschau.soll);
+  ksSollAufteilung.textContent = aufteilungsText("soll");
 
   ksGezaehltFeld.value = "";
   ksDifferenz.textContent = "";
   ksNaechsterStartFeld.value = vorschau.soll.toFixed(2);
 
-  await renderKassensturzHistorie(aktiveKasse);
+  // Anfangsbestand-Override nur fuer Kassen, die gerade ihren allerersten
+  // Kassensturz haben (analog zum Windows-Dialog) - im Normalfall (beide
+  // Kassen schon mindestens einmal gezaehlt) bleibt dieser Abschnitt leer.
+  ksAnfangsbestandOverridesContainer.innerHTML = "";
+  ksAnfangsbestandOverrideFelder = {};
+  for (const k of vorschau.kassen) {
+    if (!k.istErsterKassensturz) continue;
+    const label = document.createElement("label");
+    label.innerHTML = `<b>Anfangsbestand (Wechselgeld) – ${KASSE_LABEL[k.veranstaltung] ?? k.veranstaltung}:</b>`;
+    const input = document.createElement("input");
+    input.type = "number";
+    input.inputMode = "decimal";
+    input.step = "0.01";
+    input.className = "betrag";
+    input.value = "0.00";
+    input.oninput = ksAnfangsbestandOverrideGeaendert;
+    ksAnfangsbestandOverrideFelder[k.veranstaltung] = input;
+    ksAnfangsbestandOverridesContainer.appendChild(label);
+    ksAnfangsbestandOverridesContainer.appendChild(input);
+  }
+
+  await renderKassensturzHistorie();
+}
+
+function ksAktuellesSollGesamt() {
+  if (!ksLetzteVorschauGesamt) return 0;
+  let soll = 0;
+  for (const k of ksLetzteVorschauGesamt.kassen) {
+    const feld = ksAnfangsbestandOverrideFelder[k.veranstaltung];
+    const anfangsbestand = feld ? parseFloat(feld.value) || 0 : k.anfangsbestand;
+    soll += anfangsbestand + k.einnahmen - k.auszahlungen - k.sonstigeAusgaben
+      + k.einzahlungen - k.entnahmen;
+  }
+  return Math.round(soll * 100) / 100;
+}
+
+function ksAnfangsbestandOverrideGeaendert() {
+  // Wenn der/die Helfer:in den Startbetrag-Vorschlag noch nicht
+  // angepasst hat, zieht er beim Tippen im Override-Feld live mit.
+  const alterSoll = letzterKassensturzSoll;
+  const neuerSoll = ksAktuellesSollGesamt();
+  letzterKassensturzSoll = neuerSoll;
+  ksSoll.textContent = euro(neuerSoll);
+  if (parseFloat(ksNaechsterStartFeld.value) === alterSoll) {
+    ksNaechsterStartFeld.value = neuerSoll.toFixed(2);
+  }
+  ksGezaehltGeaendert();
 }
 
 function ksGezaehltGeaendert() {
@@ -838,30 +902,46 @@ async function ksSpeichern() {
   const naechsterStartRoh = parseFloat(ksNaechsterStartFeld.value);
   const naechsterStart = isNaN(naechsterStartRoh) ? letzterKassensturzSoll : naechsterStartRoh;
   const benutzer = session.getAktuellerBenutzer();
-  const aktiveKasse = session.getAktiveKasse();
-  const ergebnis = await repo.kassensturzDurchfuehren(
-    aktiveKasse,
+  const overrides = {};
+  for (const [veranstaltung, feld] of Object.entries(ksAnfangsbestandOverrideFelder)) {
+    const wert = parseFloat(feld.value);
+    overrides[veranstaltung] = isNaN(wert) ? 0 : wert;
+  }
+  const ergebnis = await repo.kassensturzGesamtDurchfuehren(
     gezaehlt,
     naechsterStart,
-    null,
+    overrides,
     benutzer.name
   );
+  const aufteilungText = ergebnis.kassen
+    .map(
+      (k) =>
+        `${KASSE_LABEL[k.veranstaltung] ?? k.veranstaltung}: Soll ${euro(k.soll)}, ` +
+        `Gezählt ${euro(k.gezaehlterBetrag)}, Differenz ${euro(k.differenz, true)}`
+    )
+    .join("\n");
   zeigeHinweis(
     "Kassensturz gespeichert",
-    `Soll: ${euro(ergebnis.soll)}\nGezählt: ${euro(gezaehlt)}\nDifferenz: ${euro(ergebnis.differenz, true)}`
+    `Soll (gesamt): ${euro(ergebnis.soll)}\nGezählt (gesamt): ${euro(gezaehlt)}\n` +
+      `Differenz (gesamt): ${euro(ergebnis.differenz, true)}\n\nAufteilung nach Kasse:\n${aufteilungText}`
   );
   renderKassensturz();
   renderEntnahmen();
 
-  // Runde 27: der Ueberschuss, der als Wechselgeld NICHT in der Kasse
-  // bleibt (gezaehlt - naechster Startbetrag), wird bereits ueber den
-  // Anfangsbestand-Uebertrag aus dem kuenftigen Soll ausgeschlossen - hier
-  // nur FRAGEN, ob dokumentiert werden soll, wer ihn erhalten hat (rein
-  // informativ, siehe repo.js bargeldEntnahmeErfassen/kassensturzId).
+  // Runde 27 (jetzt fuer den Gesamtbetrag, Runde 37): der Ueberschuss, der
+  // als Wechselgeld NICHT in der Kasse bleibt (gezaehlt - naechster
+  // Startbetrag), wird bereits ueber den Anfangsbestand-Uebertrag aus dem
+  // kuenftigen Soll ausgeschlossen - hier nur FRAGEN, ob dokumentiert
+  // werden soll, wer ihn erhalten hat (rein informativ, siehe repo.js
+  // bargeldEntnahmeErfassen/kassensturzId). Gebucht wird das gegen die
+  // Kasse mit dem groessten Soll-Anteil dieser Runde - welche Kasse genau
+  // ist fuer diese reine Empfaenger-Doku nicht entscheidend, das Geld
+  // kommt ja aus derselben gemeinsamen Kasse.
   const ueberschuss = Math.round((gezaehlt - naechsterStart) * 100) / 100;
   if (ueberschuss > 0) {
-    ksEntnahmeUeberschussKasse = aktiveKasse;
-    ksEntnahmeUeberschussKassensturzId = ergebnis.ksId;
+    const fuehrendeKasse = ergebnis.kassen.reduce((a, b) => (b.soll > a.soll ? b : a));
+    ksEntnahmeUeberschussKasse = fuehrendeKasse.veranstaltung;
+    ksEntnahmeUeberschussKassensturzId = fuehrendeKasse.ksId;
     ksEntnahmeText.textContent =
       `Überschuss aus diesem Kassensturz: ${euro(ueberschuss)}. Soll jetzt erfasst ` +
       "werden, wer dieses Geld erhalten hat?";
@@ -911,9 +991,12 @@ async function ksEntnahmeSpeichern() {
   renderEntnahmen();
 }
 
-async function renderKassensturzHistorie(aktiveKasse) {
-  const alle = await repo.kassensturzHistorie(200);
-  const anzeige = alle.filter((k) => k.veranstaltung === aktiveKasse).slice(0, 20);
+async function renderKassensturzHistorie() {
+  // Runde 37: nicht mehr nach aktiver Kasse gefiltert, da der Kassensturz
+  // jetzt kombiniert (fuer alle Kassen zusammen) durchgefuehrt wird - die
+  // "Kasse"-Spalte zeigt weiterhin, wie sich die einzelnen Eintraege auf
+  // Jugend/Senioren aufteilen.
+  const anzeige = (await repo.kassensturzHistorie(200)).slice(0, 20);
   ksHistorieBody.innerHTML = "";
   for (const k of anzeige) {
     const tr = document.createElement("tr");

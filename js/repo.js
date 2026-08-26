@@ -15,7 +15,7 @@
 // Vorgang an statt den Original-Vorgang zu veraendern.
 
 import { getAll, get, put, geraetId, jetzt, neueId } from "./db.js";
-import { GERAET_NAME, PFAND_RUECKGABE_PRODUKT_ID } from "./config.js";
+import { GERAET_NAME, PFAND_RUECKGABE_PRODUKT_ID, VERANSTALTUNGEN } from "./config.js";
 import { rund2 } from "./format.js";
 import { pinPruefen } from "./auth.js";
 
@@ -825,6 +825,122 @@ export async function kassensturzDurchfuehren(
     benutzer: benutzerName,
   });
   return { ksId, soll, differenz };
+}
+
+// Runde 37: EIN kombinierter Kassensturz ueber alle Kassen statt einem je
+// Kasse (siehe kiosk/repository.py kassensturz_gesamt_vorschau/
+// kassensturz_gesamt_durchfuehren, dort die ausfuehrliche Begruendung).
+// Physisch gibt es nur eine gemeinsame Geldkasse - Jugend/Senioren bleibt
+// als Buchungs-Kategorie fuer die Gewinnzuordnung bestehen, deshalb wird
+// hier der EINE gezaehlte/naechste-Runde-Betrag anteilig nach Soll auf die
+// einzelnen Kassen aufgeteilt und ganz normal ueber kassensturzDurchfuehren
+// gebucht - Kassensturz-Historie und -Beleg bleiben dadurch unveraendert
+// je Kasse nutzbar.
+export async function kassensturzGesamtVorschau() {
+  const kassen = [];
+  for (const veranstaltung of VERANSTALTUNGEN) {
+    const vorschau = await kassensturzVorschau(veranstaltung);
+    vorschau.veranstaltung = veranstaltung;
+    kassen.push(vorschau);
+  }
+  const summe = (feld) => rund2(kassen.reduce((s, k) => s + k[feld], 0));
+  return {
+    kassen,
+    anfangsbestand: summe("anfangsbestand"),
+    einnahmen: summe("einnahmen"),
+    auszahlungen: summe("auszahlungen"),
+    sonstigeAusgaben: summe("sonstigeAusgaben"),
+    einzahlungen: summe("einzahlungen"),
+    entnahmen: summe("entnahmen"),
+    soll: summe("soll"),
+  };
+}
+
+// Teilt einen Gesamtbetrag proportional nach Soll-Anteil auf die Kassen
+// auf (physisch dasselbe Bargeld, keine echte Trennung moeglich). Bei
+// Soll-Summe 0 wird gleichmaessig aufgeteilt. Eine Rundungsdifferenz
+// (durch das Runden auf den Cent je Kasse) wird der Kasse mit dem
+// groessten Anteil zugeschlagen, damit die Einzelbetraege in Summe exakt
+// wieder den Gesamtbetrag ergeben.
+function kassenanteileAufteilen(gesamtbetrag, kassenSoll) {
+  const n = kassenSoll.length;
+  if (n === 0) return [];
+  const sollSumme = kassenSoll.reduce((s, x) => s + x, 0);
+  const anteile = sollSumme
+    ? kassenSoll.map((s) => s / sollSumme)
+    : kassenSoll.map(() => 1 / n);
+  const betraege = anteile.map((a) => rund2(gesamtbetrag * a));
+  const rest = rund2(gesamtbetrag - betraege.reduce((s, b) => s + b, 0));
+  if (rest) {
+    let groessterIndex = 0;
+    for (let i = 1; i < n; i++) {
+      if (kassenSoll[i] > kassenSoll[groessterIndex]) groessterIndex = i;
+    }
+    betraege[groessterIndex] = rund2(betraege[groessterIndex] + rest);
+  }
+  return betraege;
+}
+
+// anfangsbestandOverrides: optionales Objekt {veranstaltung: betrag} fuer
+// Kassen, die gerade ihren allerersten Kassensturz haben (siehe
+// kassensturzVorschau().istErsterKassensturz) - fuer alle anderen Kassen
+// wird der Anfangsbestand wie gewohnt automatisch aus der letzten Runde
+// uebernommen. Die Soll-Formel je Kasse ist absichtlich identisch zu der
+// in kassensturzDurchfuehren() dupliziert (nur fuer die Aufteilung nach
+// Soll-Anteil benoetigt).
+export async function kassensturzGesamtDurchfuehren(
+  gezaehlterBetragGesamt,
+  naechsterStartbetragGesamt,
+  anfangsbestandOverrides,
+  benutzerName
+) {
+  anfangsbestandOverrides = anfangsbestandOverrides || {};
+  const vorschauGesamt = await kassensturzGesamtVorschau();
+
+  const kassenSoll = vorschauGesamt.kassen.map((k) => {
+    const override = anfangsbestandOverrides[k.veranstaltung];
+    const anfangsbestand =
+      k.istErsterKassensturz && override !== undefined && override !== null
+        ? override
+        : k.anfangsbestand;
+    return rund2(
+      anfangsbestand + k.einnahmen - k.auszahlungen - k.sonstigeAusgaben
+        + k.einzahlungen - k.entnahmen
+    );
+  });
+
+  const sollGesamt = rund2(kassenSoll.reduce((s, x) => s + x, 0));
+  const gezaehltJeKasse = kassenanteileAufteilen(gezaehlterBetragGesamt, kassenSoll);
+  const naechsterStartJeKasse = kassenanteileAufteilen(naechsterStartbetragGesamt, kassenSoll);
+
+  const kassen = [];
+  for (let i = 0; i < vorschauGesamt.kassen.length; i++) {
+    const k = vorschauGesamt.kassen[i];
+    const override = k.istErsterKassensturz ? anfangsbestandOverrides[k.veranstaltung] : undefined;
+    const anfangsbestandOverride = override === undefined || override === null ? undefined : override;
+    const ergebnis = await kassensturzDurchfuehren(
+      k.veranstaltung,
+      gezaehltJeKasse[i],
+      naechsterStartJeKasse[i],
+      anfangsbestandOverride,
+      benutzerName
+    );
+    kassen.push({
+      veranstaltung: k.veranstaltung,
+      ksId: ergebnis.ksId,
+      soll: ergebnis.soll,
+      gezaehlterBetrag: gezaehltJeKasse[i],
+      naechsterStartbetrag: naechsterStartJeKasse[i],
+      differenz: ergebnis.differenz,
+    });
+  }
+
+  return {
+    kassen,
+    soll: sollGesamt,
+    gezaehlterBetrag: gezaehlterBetragGesamt,
+    differenz: rund2(gezaehlterBetragGesamt - sollGesamt),
+  };
 }
 
 export async function kassensturzHistorie(limit = 30) {

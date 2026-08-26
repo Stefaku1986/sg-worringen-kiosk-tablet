@@ -115,25 +115,34 @@
         </div>
       </section>
 
-      <!-- Kassensturz -->
+      <!-- Kassensturz (Runde 37: EIN kombinierter Kassensturz ueber alle
+           Kassen - physisch nur eine gemeinsame Geldkasse, siehe
+           js/repo.js kassensturzGesamtVorschau/kassensturzGesamtDurchfuehren) -->
       <section id="kassensturz-view" style="display:none;">
         <div class="karte" style="max-width:480px;">
-          <h2 style="margin-top:0; color:var(--blau-dunkel);">Kassensturz – <span id="ks-kasse-name"></span></h2>
+          <h2 style="margin-top:0; color:var(--blau-dunkel);">Kassensturz (gesamte Kasse)</h2>
+          <div id="ks-anfangsbestand-overrides"></div>
           <div class="kennzahl-zeile"><span>Anfangsbestand</span><span id="ks-anfangsbestand"></span></div>
+          <div class="kennzahl-aufteilung" id="ks-anfangsbestand-aufteilung"></div>
           <div class="kennzahl-zeile"><span>Einnahmen seit letztem Kassensturz</span><span id="ks-einnahmen"></span></div>
+          <div class="kennzahl-aufteilung" id="ks-einnahmen-aufteilung"></div>
           <div class="kennzahl-zeile"><span>Schiedsrichter-Auszahlungen</span><span id="ks-auszahlungen"></span></div>
           <div class="kennzahl-zeile"><span>Sonstige Ausgaben</span><span id="ks-sonstige-ausgaben"></span></div>
           <div class="kennzahl-zeile"><span>Bargeld-Einzahlungen</span><span id="ks-einzahlungen"></span></div>
           <div class="kennzahl-zeile"><span>Bargeld-Entnahmen</span><span id="ks-entnahmen"></span></div>
-          <div class="kennzahl-zeile gesamt"><span>Soll</span><span id="ks-soll"></span></div>
+          <div class="kennzahl-zeile gesamt"><span>Soll (gesamt)</span><span id="ks-soll"></span></div>
+          <div class="kennzahl-aufteilung" id="ks-soll-aufteilung"></div>
 
-          <label><b>Tatsächlich gezählt (Ist):</b></label>
+          <label><b>Tatsächlich gezählt (Ist, gesamt):</b></label>
           <input type="number" inputmode="decimal" step="0.01" class="betrag" id="ks-gezaehlt-feld" />
 
           <div id="ks-differenz" class="kennzahl-zeile gesamt"></div>
 
-          <label><b>Startbetrag für nächste Runde:</b></label>
+          <label><b>Startbetrag für nächste Runde (gesamt):</b></label>
           <input type="number" inputmode="decimal" step="0.01" class="betrag" id="ks-naechster-start-feld" />
+          <p class="hinweis">Wird beim Speichern automatisch anteilig nach
+            Soll auf Jugend-/Seniorenkasse aufgeteilt, damit die
+            Gewinnzuordnung je Abteilung erhalten bleibt.</p>
 
           <button id="ks-speichern-btn" class="btn btn-primaer" style="width:100%;">Kassensturz speichern</button>
         </div>
@@ -457,10 +466,15 @@
 
         <h3>Kassensturz</h3>
         <p>Im Reiter <b>„Kassensturz“</b> wird das tatsächlich gezählte
-        Bargeld der aktuell ausgewählten Kasse erfasst und mit dem erwarteten
-        Betrag (Soll) verglichen. Der <b>„Startbetrag für nächste Runde“</b>
-        bleibt als Wechselgeld in der Kasse, der Rest gilt als entnommen. Die
-        Historie darunter zeigt vergangene Kassenstürze.</p>
+        Bargeld <b>einmal für die gesamte (gemeinsame) Kasse</b> erfasst und
+        mit dem erwarteten Gesamtbetrag (Soll) verglichen – Jugend- und
+        Seniorenkasse müssen dafür nicht mehr getrennt gezählt werden. Im
+        Hintergrund wird der gezählte Betrag automatisch anteilig nach Soll
+        auf Jugend- und Seniorenkasse aufgeteilt, damit die Gewinnzuordnung
+        je Abteilung erhalten bleibt. Der <b>„Startbetrag für nächste Runde
+        (gesamt)“</b> bleibt als Wechselgeld in der gemeinsamen Kasse, der
+        Rest gilt als entnommen. Die Historie darunter zeigt vergangene
+        Kassenstürze je Kasse.</p>
 
         <h3>Pfand &amp; Pfandrückgabe</h3>
         <p>Pfandpflichtige Getränke buchen das Pfand automatisch mit, wenn sie
