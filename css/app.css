@@ -312,16 +312,43 @@ button.btn-primaer:active {
   gap: 16px;
   height: 100%;
 }
-#produkt-grid {
+#produkt-spalte {
   flex: 2;
-  display: grid;
-  /* Runde 30: Mindestbreite nur leicht von 130px auf 132px angepasst,
-     damit sich an der Spaltenzahl (und damit wie viele Zeilen man
-     scrollen muss) kaum etwas aendert - das eigentliche Problem war die
-     Schriftgroesse (16px vom body geerbt, siehe .produkt-kachel-name
-     unten), nicht die Kachelbreite selbst. */
-  grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+#kategorie-umschalter {
+  display: flex;
   gap: 8px;
+  margin-bottom: 8px;
+}
+.kat-umschalt-btn {
+  flex: 1;
+  border: 2px solid var(--grau-rand);
+  background: white;
+  color: var(--text-dunkel);
+  border-radius: 8px;
+  padding: 10px;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.kat-umschalt-btn.aktiv {
+  background: var(--blau);
+  border-color: var(--blau-dunkel);
+  color: white;
+}
+#produkt-grid {
+  flex: 1;
+  display: grid;
+  /* Runde 39: Kacheln um 10% verkleinert (119px statt 132px Mindestbreite,
+     Schrift/Innenabstand proportional angepasst), auf Nutzerwunsch
+     ("Kacheln generell 10% verkleinern") - zusammen mit der neuen
+     Getraenke-/Speisen-Umschaltung oben passen dadurch spuerbar mehr
+     Kacheln ohne Scrollen auf den Bildschirm. */
+  grid-template-columns: repeat(auto-fill, minmax(119px, 1fr));
+  gap: 7px;
   align-content: start;
   overflow-y: auto;
 }
@@ -329,10 +356,10 @@ button.btn-primaer:active {
   background: white;
   color: var(--text-dunkel);
   border: 2px solid var(--grau-rand);
-  border-radius: 14px;
-  padding: 8px;
+  border-radius: 13px;
+  padding: 7px;
   font-weight: 700;
-  min-height: 92px;
+  min-height: 83px;
   cursor: pointer;
   display: flex;
   flex-direction: column;
@@ -346,11 +373,11 @@ button.btn-primaer:active {
   border-color: var(--gelb-dunkel);
 }
 .produkt-kachel-name {
-  font-size: 13px;
+  font-size: 12px;
   line-height: 1.15;
 }
 .produkt-kachel-preis {
-  font-size: 14px;
+  font-size: 13px;
 }
 .kategorie-titel {
   grid-column: 1 / -1;

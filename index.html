@@ -92,7 +92,16 @@
 
       <!-- Verkauf -->
       <section id="verkauf-view" style="display:none;">
-        <div id="produkt-grid"></div>
+        <div id="produkt-spalte">
+          <!-- Runde 39: schneller Wechsel zwischen Getraenken und Speisen
+               (ein Tap statt scrollen) statt beider Kategorien
+               untereinander mit Zwischenueberschrift. -->
+          <div id="kategorie-umschalter">
+            <button type="button" class="kat-umschalt-btn" id="kat-btn-Getraenk" data-kategorie="Getraenk">Getränke</button>
+            <button type="button" class="kat-umschalt-btn" id="kat-btn-Speise" data-kategorie="Speise">Speisen</button>
+          </div>
+          <div id="produkt-grid"></div>
+        </div>
         <div id="warenkorb-spalte">
           <button id="helferpreis-btn" class="btn helferpreis-btn">Helferpreis (für den nächsten Artikel)</button>
           <button id="pfand-rueckgabe-btn" class="btn pfand-rueckgabe-btn">Pfand zurückgeben (2,00 €)</button>
@@ -138,11 +147,10 @@
 
           <div id="ks-differenz" class="kennzahl-zeile gesamt"></div>
 
-          <label><b>Startbetrag für nächste Runde (gesamt):</b></label>
-          <input type="number" inputmode="decimal" step="0.01" class="betrag" id="ks-naechster-start-feld" />
-          <p class="hinweis">Wird beim Speichern automatisch anteilig nach
-            Soll auf Jugend-/Seniorenkasse aufgeteilt, damit die
-            Gewinnzuordnung je Abteilung erhalten bleibt.</p>
+          <p class="hinweis">Der gezählte Betrag bleibt komplett als
+            Wechselgeld in der Kasse und wird automatisch anteilig nach
+            Soll auf Jugend-/Seniorenkasse aufgeteilt (= Anfangsbestand für
+            den nächsten Kassensturz).</p>
 
           <button id="ks-speichern-btn" class="btn btn-primaer" style="width:100%;">Kassensturz speichern</button>
         </div>

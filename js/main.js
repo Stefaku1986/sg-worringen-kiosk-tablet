@@ -92,6 +92,8 @@ const tastatur = el("tastatur");
 const pinZurueckBtn = el("pin-zurueck-btn");
 
 const produktGrid = el("produkt-grid");
+const katBtnGetraenk = el("kat-btn-Getraenk");
+const katBtnSpeise = el("kat-btn-Speise");
 const helferpreisBtn = el("helferpreis-btn");
 const pfandRueckgabeBtn = el("pfand-rueckgabe-btn");
 const warenkorbListe = el("warenkorb-liste");
@@ -113,7 +115,6 @@ const ksSoll = el("ks-soll");
 const ksSollAufteilung = el("ks-soll-aufteilung");
 const ksGezaehltFeld = el("ks-gezaehlt-feld");
 const ksDifferenz = el("ks-differenz");
-const ksNaechsterStartFeld = el("ks-naechster-start-feld");
 const ksSpeichernBtn = el("ks-speichern-btn");
 const ksHistorieBody = document.querySelector("#ks-historie-tabelle tbody");
 
@@ -458,6 +459,30 @@ async function pinBestaetigen() {
   // das schwerwiegende Folgen hatte.
   loginPinEingabe.style.display = "none";
   nachAnmeldungAnzeigen();
+  kassensturzHinweisPruefenUndAnzeigen();
+}
+
+// Runde 39: Erinnerung "Kasse einmal zaehlen", nur beim allerersten Login
+// eines Kalendertages auf DIESEM Geraet (nicht bei jedem Login) - Pendant
+// zu repository.kassensturz_hinweis_pruefen() auf Windows. localStorage
+// statt IndexedDB, weil das rein eine per-Geraet-UX-Kleinigkeit ist und
+// keine Synchronisation/Haltbarkeit ueber einen App-Neustart hinaus in
+// IndexedDB braucht.
+function kassensturzHinweisPruefenUndAnzeigen() {
+  const heute = new Date().toISOString().slice(0, 10);
+  try {
+    if (localStorage.getItem("kassensturz_hinweis_datum") === heute) return;
+    localStorage.setItem("kassensturz_hinweis_datum", heute);
+  } catch (exc) {
+    // localStorage kann in seltenen Faellen (z.B. privater Modus mit
+    // Speicherverbot) eine Ausnahme werfen - dann einfach jedes Mal
+    // erinnern statt die Anmeldung zu blockieren.
+  }
+  zeigeHinweis(
+    "Kassensturz nicht vergessen",
+    "Bitte heute einmal die Kasse zählen (Kassensturz), bevor es losgeht " +
+      "– am besten gleich zu Beginn."
+  );
 }
 
 function nachAnmeldungAnzeigen() {
@@ -523,52 +548,54 @@ document.addEventListener("keydown", (ev) => {
 // Verkauf
 // ---------------------------------------------------------------------
 
+// Runde 39: zeigt immer nur EINE Kategorie gleichzeitig (Umschalt-Knoepfe
+// "Getränke"/"Speisen" statt beide Kategorien untereinander mit
+// Zwischenueberschrift) - schnellerer Wechsel per Tap. Getraenke zuerst,
+// weil das beim Kiosk der haeufigere Fall ist (analog zur Windows-App).
+let aktiveProduktKategorie = "Getraenk";
+
+function kategorieUmschalten(kategorie) {
+  if (kategorie === aktiveProduktKategorie) return;
+  aktiveProduktKategorie = kategorie;
+  renderProduktGrid();
+}
+
 function renderProduktGrid() {
+  katBtnGetraenk.classList.toggle("aktiv", aktiveProduktKategorie === "Getraenk");
+  katBtnSpeise.classList.toggle("aktiv", aktiveProduktKategorie === "Speise");
+
   produktGrid.innerHTML = "";
-  const gruppen = new Map();
-  for (const p of produkteCache) {
-    if (!gruppen.has(p.kategorie)) gruppen.set(p.kategorie, []);
-    gruppen.get(p.kategorie).push(p);
-  }
-  const reihenfolge = ["Getraenk", "Speise", ...[...gruppen.keys()].filter((k) => k !== "Getraenk" && k !== "Speise")];
-  for (const kategorie of reihenfolge) {
-    const produkte = gruppen.get(kategorie);
-    if (!produkte || !produkte.length) continue;
-    const titel = document.createElement("div");
-    titel.className = "kategorie-titel";
-    titel.textContent = KATEGORIE_LABEL[kategorie] ?? kategorie;
-    produktGrid.appendChild(titel);
-    for (const produkt of produkte) {
-      const kachel = document.createElement("button");
-      kachel.type = "button";
-      kachel.className = "produkt-kachel";
-      const name = document.createElement("div");
-      name.className = "produkt-kachel-name";
-      name.textContent = produkt.name;
-      const preis = document.createElement("div");
-      preis.className = "produkt-kachel-preis";
-      preis.textContent = euro(produkt.verkaufspreis);
-      kachel.appendChild(name);
-      kachel.appendChild(preis);
-      if (produkt.helferpreis != null && produkt.helferpreis !== produkt.verkaufspreis) {
-        const helferzeile = document.createElement("div");
-        helferzeile.style.fontSize = "12px";
-        helferzeile.style.fontWeight = "400";
-        helferzeile.style.color = "#666";
-        helferzeile.textContent = `Helfer: ${euro(produkt.helferpreis)}`;
-        kachel.appendChild(helferzeile);
-      }
-      if (produkt.pfand_betrag) {
-        const pfandzeile = document.createElement("div");
-        pfandzeile.style.fontSize = "12px";
-        pfandzeile.style.fontWeight = "400";
-        pfandzeile.style.color = "#666";
-        pfandzeile.textContent = `+${euro(produkt.pfand_betrag)} Pfand`;
-        kachel.appendChild(pfandzeile);
-      }
-      kachel.onclick = () => warenkorbHinzufuegen(produkt);
-      produktGrid.appendChild(kachel);
+  const produkte = produkteCache.filter((p) => p.kategorie === aktiveProduktKategorie);
+  for (const produkt of produkte) {
+    const kachel = document.createElement("button");
+    kachel.type = "button";
+    kachel.className = "produkt-kachel";
+    const name = document.createElement("div");
+    name.className = "produkt-kachel-name";
+    name.textContent = produkt.name;
+    const preis = document.createElement("div");
+    preis.className = "produkt-kachel-preis";
+    preis.textContent = euro(produkt.verkaufspreis);
+    kachel.appendChild(name);
+    kachel.appendChild(preis);
+    if (produkt.helferpreis != null && produkt.helferpreis !== produkt.verkaufspreis) {
+      const helferzeile = document.createElement("div");
+      helferzeile.style.fontSize = "12px";
+      helferzeile.style.fontWeight = "400";
+      helferzeile.style.color = "#666";
+      helferzeile.textContent = `Helfer: ${euro(produkt.helferpreis)}`;
+      kachel.appendChild(helferzeile);
     }
+    if (produkt.pfand_betrag) {
+      const pfandzeile = document.createElement("div");
+      pfandzeile.style.fontSize = "12px";
+      pfandzeile.style.fontWeight = "400";
+      pfandzeile.style.color = "#666";
+      pfandzeile.textContent = `+${euro(produkt.pfand_betrag)} Pfand`;
+      kachel.appendChild(pfandzeile);
+    }
+    kachel.onclick = () => warenkorbHinzufuegen(produkt);
+    produktGrid.appendChild(kachel);
   }
 }
 
@@ -897,7 +924,6 @@ async function renderKassensturz() {
 
   ksGezaehltFeld.value = "";
   ksDifferenz.textContent = "";
-  ksNaechsterStartFeld.value = vorschau.soll.toFixed(2);
 
   // Anfangsbestand-Override nur fuer Kassen, die gerade ihren allerersten
   // Kassensturz haben (analog zum Windows-Dialog) - im Normalfall (beide
@@ -936,15 +962,8 @@ function ksAktuellesSollGesamt() {
 }
 
 function ksAnfangsbestandOverrideGeaendert() {
-  // Wenn der/die Helfer:in den Startbetrag-Vorschlag noch nicht
-  // angepasst hat, zieht er beim Tippen im Override-Feld live mit.
-  const alterSoll = letzterKassensturzSoll;
-  const neuerSoll = ksAktuellesSollGesamt();
-  letzterKassensturzSoll = neuerSoll;
-  ksSoll.textContent = euro(neuerSoll);
-  if (parseFloat(ksNaechsterStartFeld.value) === alterSoll) {
-    ksNaechsterStartFeld.value = neuerSoll.toFixed(2);
-  }
+  letzterKassensturzSoll = ksAktuellesSollGesamt();
+  ksSoll.textContent = euro(letzterKassensturzSoll);
   ksGezaehltGeaendert();
 }
 
@@ -965,8 +984,11 @@ async function ksSpeichern() {
     zeigeHinweis("Fehlende Angabe", "Bitte den tatsächlich gezählten Betrag eingeben.");
     return;
   }
-  const naechsterStartRoh = parseFloat(ksNaechsterStartFeld.value);
-  const naechsterStart = isNaN(naechsterStartRoh) ? letzterKassensturzSoll : naechsterStartRoh;
+  // Runde 39: kein eigenes "Startbetrag naechste Runde"-Feld mehr - der
+  // komplette gezaehlte Betrag bleibt automatisch als Wechselgeld in der
+  // Kasse (siehe Windows-Pendant KombinierterKassensturzDialog.
+  // naechster_startbetrag()).
+  const naechsterStart = gezaehlt;
   const benutzer = session.getAktuellerBenutzer();
   const overrides = {};
   for (const [veranstaltung, feld] of Object.entries(ksAnfangsbestandOverrideFelder)) {
@@ -993,29 +1015,11 @@ async function ksSpeichern() {
   );
   renderKassensturz();
   renderEntnahmen();
-
-  // Runde 27 (jetzt fuer den Gesamtbetrag, Runde 37): der Ueberschuss, der
-  // als Wechselgeld NICHT in der Kasse bleibt (gezaehlt - naechster
-  // Startbetrag), wird bereits ueber den Anfangsbestand-Uebertrag aus dem
-  // kuenftigen Soll ausgeschlossen - hier nur FRAGEN, ob dokumentiert
-  // werden soll, wer ihn erhalten hat (rein informativ, siehe repo.js
-  // bargeldEntnahmeErfassen/kassensturzId). Gebucht wird das gegen die
-  // Kasse mit dem groessten Soll-Anteil dieser Runde - welche Kasse genau
-  // ist fuer diese reine Empfaenger-Doku nicht entscheidend, das Geld
-  // kommt ja aus derselben gemeinsamen Kasse.
-  const ueberschuss = Math.round((gezaehlt - naechsterStart) * 100) / 100;
-  if (ueberschuss > 0) {
-    const fuehrendeKasse = ergebnis.kassen.reduce((a, b) => (b.soll > a.soll ? b : a));
-    ksEntnahmeUeberschussKasse = fuehrendeKasse.veranstaltung;
-    ksEntnahmeUeberschussKassensturzId = fuehrendeKasse.ksId;
-    ksEntnahmeText.textContent =
-      `Überschuss aus diesem Kassensturz: ${euro(ueberschuss)}. Soll jetzt erfasst ` +
-      "werden, wer dieses Geld erhalten hat?";
-    ksEntnahmeBetragFeld.value = ueberschuss.toFixed(2);
-    ksEntnahmeEmpfaengerFeld.value = "";
-    ksEntnahmeFehler.textContent = "";
-    ksEntnahmeOverlay.classList.remove("versteckt");
-  }
+  // Runde 39: die fruehere Ueberschuss-Entnahme-Nachfrage entfaellt hier
+  // bewusst - seit dem Wegfall des separaten "Startbetrag naechste
+  // Runde"-Felds ist der Ueberschuss (gezaehlt - naechster Start) immer 0.
+  // Wer tatsaechlich Bargeld aus der Kasse entnimmt, bucht das weiterhin
+  // ganz normal ueber den eigenen Reiter "Entnahmen".
 }
 
 // Zwischenspeicher fuer den Dialog "Bargeld-Entnahme dokumentieren" (siehe
@@ -2094,6 +2098,9 @@ function wireEvents() {
 
   kassenvorschlagUebernehmenBtn.onclick = kassenvorschlagUebernehmen;
   kassenvorschlagVerwerfenBtn.onclick = kassenvorschlagVerwerfen;
+
+  katBtnGetraenk.onclick = () => kategorieUmschalten("Getraenk");
+  katBtnSpeise.onclick = () => kategorieUmschalten("Speise");
 
   helferpreisBtn.onclick = () => {
     helferpreisAktiv = !helferpreisAktiv;
