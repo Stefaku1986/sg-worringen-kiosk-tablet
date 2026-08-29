@@ -301,7 +301,10 @@
           <p class="hinweis">
             Nachbestellte Produkte (Getränke und Speisen) mit Menge eintragen – bucht
             automatisch einen Wareneingang, der Bestand aktualisiert sich direkt. Preis und
-            Pfand pro Stück sind jeweils optional. Die beiden Felder "Sonstiges Pfand" unten
+            Pfand pro Stück sind jeweils optional. Beim Preis lässt sich umstellen, ob der
+            Betrag <b>pro Stück</b> oder für die <b>gesamte Position</b> gilt (z.B. der
+            Rechnungsbetrag einer Kiste) – die Vorschau unter der Liste zeigt, was gebucht
+            wird. Die beiden Felder "Sonstiges Pfand" unten
             sind für Pfand ohne Bezug zu einer bestimmten Position (z.B. lose Kisten-Rückgabe
             beim Händler) – getrennt vom Kunden-Pfand am Kiosk.
           </p>
@@ -313,8 +316,13 @@
                    id="np-produkt-menge-feld" placeholder="Menge" value="1"
                    style="flex:1; margin:0; min-width:70px;" />
             <input type="number" inputmode="decimal" step="0.01" class="betrag"
-                   id="np-produkt-preis-feld" placeholder="Preis/Stück € (optional)"
+                   id="np-produkt-preis-feld" placeholder="Preis € (optional)"
                    style="flex:2; margin:0; min-width:110px;" />
+            <select class="betrag" id="np-produkt-preisart-auswahl"
+                    style="flex:2; margin:0; min-width:130px;">
+              <option value="stueck">Preis pro Stück</option>
+              <option value="gesamt">Preis gesamte Position</option>
+            </select>
             <input type="number" inputmode="decimal" step="0.01" class="betrag"
                    id="np-produkt-pfand-bezahlt-feld" placeholder="Pfand/Stück bezahlt € (optional)"
                    style="flex:2; margin:0; min-width:110px;" />
@@ -788,12 +796,14 @@
         <b>Monatsabrechnung</b> für einen ausgewählten Monat – mit
         Verkäufen je Produkt, Wareneinkauf, Abschreibungen und
         MwSt.-Zahllast. Der <b>Gewinn</b> je Kasse ist dabei der
-        Netto-Erlös abzüglich des tatsächlichen Wareneinkaufs (echte
-        Nachbestellungs-/Wareneingangspreise statt nur geschätzter
-        Einkaufspreis je Produkt), anteilig nach Erlösanteil auf Jugend-
-        und Seniorenkasse verteilt (Zeile <b>„Wareneinkauf
-        (anteilig)“</b>). Über <b>„Drucken“</b> öffnet sich ein
-        Browser-Druckfenster.</p>
+        Netto-Erlös abzüglich des <b>Wareneinsatzes der verkauften
+        Ware</b>: verkaufte Menge × dem Einkaufspreis pro Stück, den die
+        Nachbestellungen tatsächlich gekostet haben (Zeile
+        <b>„Wareneinsatz (verkaufte Ware)“</b>). Eingekaufte, aber noch
+        nicht verkaufte Ware mindert den Gewinn bewusst nicht – sie steht
+        in der Karte <b>„Wareneinkauf &amp; Lager“</b> als Lagerwert, damit
+        eine große Nachbestellung nicht wie ein Verlust aussieht. Über
+        <b>„Drucken“</b> öffnet sich ein Browser-Druckfenster.</p>
 
         <h3>Admin-Verwaltung (nur Administratoren)</h3>
         <p>Im Reiter <b>„Admin“</b> lassen sich Produkte und Benutzer

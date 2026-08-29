@@ -1522,17 +1522,76 @@ export function datumLokal(isoDatum) {
 // zum Python-Original.
 // ---------------------------------------------------------------------
 
-// Ungenutzt seit Runde 44 (siehe auswertungAusPositionen weiter unten) -
-// bewusst stehen gelassen statt geloescht: der pro Position hinterlegte
-// Einkaufspreis war nur eine grobe Schaetzung je Produkt, keine
-// tatsaechlich gezahlte Nachbestellungs-Rechnung. Der Gewinn wird jetzt in
-// auswertungJeKasse()/monatsabrechnung() stattdessen um den tatsaechlichen,
-// anteilig nach Erloesanteil verteilten Wareneinkauf gemindert (siehe
-// wareneinkaufAnteile()), um eine Doppelzaehlung des Wareneinsatzes zu
-// vermeiden.
+// Ungenutzt seit Runde 44, bewusst stehen gelassen statt geloescht: der
+// pro Position hinterlegte Einkaufspreis war nur eine grobe Schaetzung je
+// Produkt, keine tatsaechlich gezahlte Nachbestellungs-Rechnung. Seit
+// Runde 45 rechnet der Gewinn wieder pro verkaufter Position - aber mit
+// dem ECHTEN Einkaufspreis aus den Wareneingaengen (siehe
+// einkaufspreiseJeProdukt/wareneinsatzAusPositionen).
 function berechneGewinnPosition(einzelpreis, einkaufspreis, mwstSatz) {
   const netto = rund2(einzelpreis - mwstBetrag(einzelpreis, mwstSatz));
   return rund2(netto - (einkaufspreis || 0));
+}
+
+// Runde 45: tatsaechlicher Netto-Einkaufspreis PRO STUECK je Produkt,
+// mengengewichtet ueber alle Wareneingaenge MIT erfasstem Preis (Summe der
+// Netto-Kosten / Summe der Stueckzahl). Pendant zu
+// repository.einkaufspreise_je_produkt. Fallback wie dort: ohne einen
+// einzigen preislich erfassten Wareneingang gilt der am Produkt
+// hinterlegte einkaufspreis, sonst 0.
+async function einkaufspreiseJeProdukt() {
+  const alle = await getAll("lagerbewegungen");
+  const produkte = await getAll("produkte");
+  const summen = {};
+  for (const l of alle) {
+    if (l.typ !== "Wareneingang") continue;
+    if (l.einzelpreis == null) continue;
+    if (!(l.menge > 0)) continue;
+    const eintrag = summen[l.produkt_id] || { menge: 0, netto: 0 };
+    eintrag.menge += l.menge;
+    eintrag.netto += l.einzelpreis * l.menge;
+    summen[l.produkt_id] = eintrag;
+  }
+  const ergebnis = {};
+  for (const p of produkte) {
+    const eintrag = summen[p.id];
+    ergebnis[p.id] = eintrag && eintrag.menge ? eintrag.netto / eintrag.menge : p.einkaufspreis || 0;
+  }
+  return ergebnis;
+}
+
+// Runde 45: Wareneinsatz je Kasse = Einkaufswert der tatsaechlich
+// VERKAUFTEN Stuecke - Pendant zu repository._wareneinsatz_aus_positionen.
+// Bewusst nicht der gesamte Wareneinkauf des Zeitraums (Runde 44): noch
+// nicht verkaufte Ware ist Lagerbestand (siehe lagerwertGesamt), kein
+// Verlust. Pfandrueckgabe-Positionen zaehlen nicht mit.
+function wareneinsatzAusPositionen(positionen, preise) {
+  const ergebnis = {};
+  for (const v of VERANSTALTUNGEN) ergebnis[v] = 0;
+  for (const p of positionen) {
+    if (!(p.veranstaltung in ergebnis)) continue;
+    if (p.ist_pfandrueckgabe) continue;
+    ergebnis[p.veranstaltung] += p.menge * (preise[p.produkt_id] || 0);
+  }
+  for (const v of VERANSTALTUNGEN) ergebnis[v] = rund2(ergebnis[v]);
+  return ergebnis;
+}
+
+// Runde 45: Wert der aktuell noch im Kiosk liegenden Ware (Bestand x
+// tatsaechlichem Einkaufspreis pro Stueck) - Pendant zu
+// repository.lagerwert_gesamt, rein informativ neben dem Gewinn.
+export async function lagerwertGesamt() {
+  const preise = await einkaufspreiseJeProdukt();
+  const alle = await getAll("lagerbewegungen");
+  const bestaende = {};
+  for (const l of alle) {
+    bestaende[l.produkt_id] = (bestaende[l.produkt_id] || 0) + l.menge;
+  }
+  let summe = 0;
+  for (const [produktId, menge] of Object.entries(bestaende)) {
+    summe += menge * (preise[produktId] || 0);
+  }
+  return rund2(summe);
 }
 
 async function positionenMitKasse(monatFilter = null) {
@@ -1583,41 +1642,24 @@ async function auswertungAusPositionen(positionen) {
   return ergebnis;
 }
 
-// Runde 44: verteilt einen Gesamtbetrag (hier: der tatsaechliche
-// Wareneinkauf aus wareneinkaufGesamt()/wareneinkaufBericht(), NICHT der
-// pauschal je Produkt hinterlegte Einkaufspreis) anteilig nach Erloesanteil
-// auf die Kassen - exakt dasselbe Rundungs-/Aufteilungsprinzip wie bei der
-// Kassensturz-Aufteilung (siehe kassenanteileAufteilen oben, Runde 37):
-// beide Anteile werden unabhaengig auf 2 Nachkommastellen gerundet, die
-// entstehende Rundungsdifferenz geht an die Kasse mit dem groessten
-// Erloesanteil (bei Gleichstand die erste in VERANSTALTUNGEN, also
-// "Jugend"). Bei Erloessumme 0 (kein Umsatz) wird 50/50 aufgeteilt.
-function wareneinkaufAnteile(erloesJeKasse, gesamtWareneinkauf) {
-  const betraege = kassenanteileAufteilen(
-    gesamtWareneinkauf,
-    VERANSTALTUNGEN.map((v) => erloesJeKasse[v] || 0)
-  );
-  return Object.fromEntries(VERANSTALTUNGEN.map((v, i) => [v, betraege[i]]));
-}
-
 // Ueber die GESAMTE Laufzeit (kein Zeitraumfilter), inkl. bereits als
 // Gewinn verbuchtem Pfand (anders als in monatsabrechnung() - siehe dort).
-// Runde 44: "Gewinn" je Kasse ist ab hier Netto-Erloes (aus
-// auswertungAusPositionen) MINUS dem tatsaechlichen Wareneinkauf (echte
-// Nachbestellungs-/Wareneingangspreise, ueber die Lebenszeit summiert via
-// wareneinkaufGesamt()), anteilig nach Erloesanteil dieser Kasse verteilt -
-// nicht mehr der pro Position geschaetzte Einkaufspreis (siehe
-// auswertungAusPositionen).
+// Runde 45: "Gewinn" je Kasse ist Netto-Erloes (aus
+// auswertungAusPositionen) MINUS dem Wareneinsatz der tatsaechlich
+// VERKAUFTEN Ware (wareneinsatzAusPositionen, mit den echten
+// Einkaufspreisen aus den Wareneingaengen). Runde 44 hatte hier stattdessen
+// den kompletten Lebenszeit-Wareneinkauf anteilig abgezogen - dadurch sah
+// jeder Lageraufbau wie ein Verlust aus. Der bezahlte Wareneinkauf bleibt
+// ueber wareneinkaufGesamt()/lagerwertGesamt() separat abrufbar.
 export async function auswertungJeKasse() {
   const positionen = await positionenMitKasse();
   const ergebnis = await auswertungAusPositionen(positionen);
 
-  const gesamtWareneinkauf = await wareneinkaufGesamt();
-  const erloesJeKasse = Object.fromEntries(VERANSTALTUNGEN.map((v) => [v, ergebnis[v].erloes]));
-  const anteile = wareneinkaufAnteile(erloesJeKasse, gesamtWareneinkauf);
+  const preise = await einkaufspreiseJeProdukt();
+  const wareneinsatz = wareneinsatzAusPositionen(positionen, preise);
   for (const v of VERANSTALTUNGEN) {
-    ergebnis[v].wareneinkauf_anteil = anteile[v];
-    ergebnis[v].gewinn = rund2(ergebnis[v].gewinn - anteile[v]);
+    ergebnis[v].wareneinsatz = wareneinsatz[v];
+    ergebnis[v].gewinn = rund2(ergebnis[v].gewinn - wareneinsatz[v]);
   }
 
   const verbucht = await pfandGewinnVerbuchtJeKasse();
@@ -1921,15 +1963,19 @@ export async function monatsabrechnung(jahr, monat) {
   const gesamtVorsteuer = rund2(wareneinkauf.reduce((s, w) => s + w.mwst, 0));
   const gesamtWareneinkaufBrutto = rund2(gesamtWareneinkaufNetto + gesamtVorsteuer);
 
-  // Runde 44: anteiliger Wareneinkaufsabzug analog zu auswertungJeKasse()
-  // (siehe wareneinkaufAnteile()), hier mit dem monatsbezogenen
-  // gesamtWareneinkaufNetto statt der Lebenszeit-Summe.
-  const erloesJeKasseMonat = Object.fromEntries(VERANSTALTUNGEN.map((v) => [v, jeKasse[v].erloes]));
-  const wareneinkaufAnteileMonat = wareneinkaufAnteile(erloesJeKasseMonat, gesamtWareneinkaufNetto);
+  // Runde 45: Wareneinsatz der in DIESEM MONAT verkauften Ware abziehen
+  // (analog zu auswertungJeKasse), nicht mehr der komplette Wareneinkauf
+  // des Monats (Runde 44) - sonst waere jeder Monat mit einer groesseren
+  // Lieferung faelschlich ein Verlustmonat.
+  const preiseMonat = await einkaufspreiseJeProdukt();
+  const wareneinsatzMonat = wareneinsatzAusPositionen(positionenAlle, preiseMonat);
   for (const v of VERANSTALTUNGEN) {
-    jeKasse[v].wareneinkauf_anteil = wareneinkaufAnteileMonat[v];
-    jeKasse[v].gewinn = rund2(jeKasse[v].gewinn - wareneinkaufAnteileMonat[v]);
+    jeKasse[v].wareneinsatz = wareneinsatzMonat[v];
+    jeKasse[v].gewinn = rund2(jeKasse[v].gewinn - wareneinsatzMonat[v]);
   }
+  const gesamtWareneinsatz = rund2(
+    VERANSTALTUNGEN.reduce((s, v) => s + wareneinsatzMonat[v], 0)
+  );
 
   const gesamtErloes = rund2(VERANSTALTUNGEN.reduce((s, v) => s + jeKasse[v].erloes, 0));
   const gesamtGewinn = rund2(VERANSTALTUNGEN.reduce((s, v) => s + jeKasse[v].gewinn, 0));
@@ -1961,6 +2007,9 @@ export async function monatsabrechnung(jahr, monat) {
     gesamt_menge_eingekauft: gesamtMengeEingekauft,
     wareneinkauf_teilweise_geschaetzt: wareneinkaufGeschaetzt,
     gesamt_wareneinkauf_netto: gesamtWareneinkaufNetto,
+    // Runde 45: Wareneinsatz der verkauften Ware (Grundlage des Gewinns),
+    // bewusst getrennt vom bezahlten Wareneinkauf oben.
+    gesamt_wareneinsatz: gesamtWareneinsatz,
     gesamt_vorsteuer: gesamtVorsteuer,
     gesamt_wareneinkauf_brutto: gesamtWareneinkaufBrutto,
     gesamt_erloes: gesamtErloes,

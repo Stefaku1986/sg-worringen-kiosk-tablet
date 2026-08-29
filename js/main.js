@@ -14,7 +14,7 @@ import {
   VERANSTALTUNGEN,
   MWST_SAETZE,
 } from "./config.js";
-import { euro, deZahl, nettoPreis, rund2 } from "./format.js";
+import { euro, deZahl, nettoPreis, nettoPreisGenau, rund2 } from "./format.js";
 import * as repo from "./repo.js";
 import * as session from "./session.js";
 import { syncJetzt, syncAutomatikStarten, onSynchronisiert, belegHochladen } from "./sync.js";
@@ -178,6 +178,7 @@ const ksEntnahmeSpeichernBtn = el("ks-entnahme-speichern-btn");
 const npProduktAuswahl = el("np-produkt-auswahl");
 const npProduktMengeFeld = el("np-produkt-menge-feld");
 const npProduktPreisFeld = el("np-produkt-preis-feld");
+const npProduktPreisartAuswahl = el("np-produkt-preisart-auswahl");
 const npProduktPfandBezahltFeld = el("np-produkt-pfand-bezahlt-feld");
 const npProduktPfandErhaltenFeld = el("np-produkt-pfand-erhalten-feld");
 const npPositionHinzufuegenBtn = el("np-position-hinzufuegen-btn");
@@ -1759,7 +1760,9 @@ function renderNachbestellungPositionenListe() {
     name.className = "name";
     name.textContent =
       `${position.name} × ${position.menge}` +
-      (position.einzelpreis != null ? ` (${euro(position.preisBrutto)}/Stück)` : "") +
+      (position.einzelpreis != null
+        ? ` (${euro(position.preisBrutto)}/Stück = ${euro(position.preisBrutto * position.menge)})`
+        : "") +
       (pfandTeile.length ? ` (${pfandTeile.join(", ")})` : "");
     div.appendChild(name);
 
@@ -1775,6 +1778,20 @@ function renderNachbestellungPositionenListe() {
 
     npPositionenListe.appendChild(div);
   }
+
+  // Runde 45: Gesamtsumme als Kontrollzeile - macht einen als "pro Stück"
+  // eingetippten Rechnungsbetrag sofort sichtbar, statt ihn erst Wochen
+  // spaeter in der Auswertung auffallen zu lassen.
+  if (nachbestellungPositionen.length) {
+    const summe = nachbestellungPositionen.reduce(
+      (s, p) => s + (p.preisBrutto || 0) * p.menge,
+      0
+    );
+    const summeZeile = document.createElement("p");
+    summeZeile.className = "hinweis";
+    summeZeile.innerHTML = `<b>Warenwert gesamt: ${euro(summe)}</b> (inkl. MwSt., ohne Pfand)`;
+    npPositionenListe.appendChild(summeZeile);
+  }
 }
 
 function nachbestellungPositionHinzufuegen() {
@@ -1782,8 +1799,17 @@ function nachbestellungPositionHinzufuegen() {
   const produkt = produkteCache.find((p) => p.id === produktId);
   if (!produkt) return;
   const menge = Math.max(1, Math.round(parseFloat(npProduktMengeFeld.value) || 1));
-  const preisBrutto = parseFloat(npProduktPreisFeld.value) || 0;
-  const einzelpreis = preisBrutto > 0 ? nettoPreis(preisBrutto, produkt.mwst_satz) : null;
+  // Runde 45: der eingegebene Betrag kann laut Auswahl entweder pro Stueck
+  // oder fuer die gesamte Position gemeint sein - gespeichert wird immer
+  // der Preis pro Stueck. Ohne diese Umschaltung wurde ein eingetippter
+  // Rechnungsbetrag mit der Menge multipliziert (120 Flaschen x 90,34 € =
+  // 10.840,80 € statt 107,50 €).
+  const eingabeBetrag = parseFloat(npProduktPreisFeld.value) || 0;
+  const preisBrutto =
+    npProduktPreisartAuswahl.value === "gesamt" && eingabeBetrag > 0
+      ? eingabeBetrag / menge
+      : eingabeBetrag;
+  const einzelpreis = preisBrutto > 0 ? nettoPreisGenau(preisBrutto, produkt.mwst_satz) : null;
   const mwstSatz = preisBrutto > 0 ? produkt.mwst_satz : null;
   // Pfand pro Stueck (Runde 32) - wie beim Preis wird nur der Wert pro
   // Stueck gespeichert, die Hochrechnung mit der Menge passiert erst beim
@@ -2524,10 +2550,27 @@ async function renderAuswertung() {
       <div class="kennzahl-zeile"><span>MwSt. 19 %</span><span>${euro(k.mwst_19)}</span></div>
       <div class="kennzahl-zeile"><span>Offenes Pfand</span><span>${euro(k.pfand)}</span></div>
       <div class="kennzahl-zeile gesamt"><span>Gewinn</span><span>${euro(k.gewinn)}</span></div>
-      <div class="kennzahl-zeile" title="Anteiliger Wareneinkauf (Nachbestellungen + sonstige Wareneingänge), aufgeteilt nach Erlösanteil dieser Kasse. Ist bereits im Gewinn oben abgezogen."><span>Wareneinkauf (anteilig)</span><span>${euro(k.wareneinkauf_anteil)}</span></div>
+      <div class="kennzahl-zeile" title="Einkaufswert der tatsächlich verkauften Ware (verkaufte Menge × tatsächlich gezahltem Einkaufspreis pro Stück). Ist bereits im Gewinn oben abgezogen. Noch nicht verkaufte Ware zählt hier nicht mit."><span>Wareneinsatz (verkaufte Ware)</span><span>${euro(k.wareneinsatz)}</span></div>
     `;
     auKasseKennzahlen.appendChild(karte);
   }
+
+  // Runde 45: Geldfluss-Sicht als Ergaenzung zum Gewinn - was insgesamt
+  // fuer Ware bezahlt wurde und wie viel davon noch als Ware im Kiosk
+  // liegt. Ohne diese beiden Zahlen wirkt eine grosse Nachbestellung wie
+  // ein Verlust (genau die Rueckmeldung, die zu dieser Umstellung gefuehrt
+  // hat).
+  const wareneinkaufGesamtBetrag = await repo.wareneinkaufGesamt();
+  const lagerwert = await repo.lagerwertGesamt();
+  const lagerKarte = document.createElement("div");
+  lagerKarte.className = "karte";
+  lagerKarte.innerHTML = `
+      <h2 style="margin-top:0; color:var(--blau-dunkel);">Wareneinkauf &amp; Lager</h2>
+      <div class="kennzahl-zeile"><span>Wareneinkauf gesamt (bezahlt, netto)</span><span>${euro(wareneinkaufGesamtBetrag)}</span></div>
+      <div class="kennzahl-zeile"><span>davon noch als Ware im Lager</span><span>${euro(lagerwert)}</span></div>
+      <p class="hinweis">Der Lagerwert mindert den Gewinn erst, wenn die Ware verkauft ist – eine große Nachbestellung ist deshalb kein Verlust.</p>
+    `;
+  auKasseKennzahlen.appendChild(lagerKarte);
 
   if (!auMonatMonatAuswahl.options.length) {
     for (let m = 1; m <= 12; m++) {
@@ -2630,7 +2673,7 @@ async function monatsabrechnungAnzeigen() {
 function monatsabrechnungHtml(m) {
   const jeKasseZeilen = VERANSTALTUNGEN.map((v) => {
     const k = m.je_kasse[v];
-    return `<tr><td>${KASSE_LABEL[v] ?? v}</td><td>${euro(k.erloes)}</td><td>${euro(k.mwst_7)}</td><td>${euro(k.mwst_19)}</td><td>${euro(k.gewinn)}</td><td>${euro(k.wareneinkauf_anteil)}</td><td>${euro(k.pfand)}</td></tr>`;
+    return `<tr><td>${KASSE_LABEL[v] ?? v}</td><td>${euro(k.erloes)}</td><td>${euro(k.mwst_7)}</td><td>${euro(k.mwst_19)}</td><td>${euro(k.gewinn)}</td><td>${euro(k.wareneinsatz)}</td><td>${euro(k.pfand)}</td></tr>`;
   }).join("");
 
   const verkaeufeZeilen =
@@ -2656,9 +2699,12 @@ function monatsabrechnungHtml(m) {
 
   return `
     <h2>Je Kasse</h2>
-    <table><thead><tr><th>Kasse</th><th>Umsatz</th><th>MwSt. 7%</th><th>MwSt. 19%</th><th>Gewinn</th><th>Wareneinkauf (anteilig)</th><th>Offenes Pfand</th></tr></thead><tbody>${jeKasseZeilen}</tbody></table>
+    <table><thead><tr><th>Kasse</th><th>Umsatz</th><th>MwSt. 7%</th><th>MwSt. 19%</th><th>Gewinn</th><th>Wareneinsatz (verkaufte Ware)</th><th>Offenes Pfand</th></tr></thead><tbody>${jeKasseZeilen}</tbody></table>
+    <p class="hinweis">„Wareneinsatz“ ist der Einkaufswert der in diesem Monat tatsächlich verkauften Stücke und im Gewinn bereits abgezogen – nicht der gesamte Wareneinkauf des Monats (siehe unten). Eingekaufte, aber noch nicht verkaufte Ware liegt als Warenwert im Kiosk.</p>
     <div class="kennzahl-zeile"><span>Gesamt-Umsatz</span><span>${euro(m.gesamt_erloes)}</span></div>
     <div class="kennzahl-zeile"><span>Gesamt-Gewinn</span><span>${euro(m.gesamt_gewinn)}</span></div>
+    <div class="kennzahl-zeile"><span>Wareneinsatz (verkaufte Ware)</span><span>${euro(m.gesamt_wareneinsatz)}</span></div>
+    <div class="kennzahl-zeile"><span>Wareneinkauf netto (bezahlt)</span><span>${euro(m.gesamt_wareneinkauf_netto)}</span></div>
     <div class="kennzahl-zeile"><span>Schiedsrichter-Auszahlungen</span><span>${euro(m.gesamt_schiedsrichter)}</span></div>
     <div class="kennzahl-zeile"><span>Ergebnis nach Schiedsrichtern</span><span>${euro(m.gesamt_ergebnis_nach_schiedsrichter)}</span></div>
     <div class="kennzahl-zeile"><span>Sonstige Ausgaben</span><span>${euro(m.gesamt_sonstige_ausgaben)}</span></div>

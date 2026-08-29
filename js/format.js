@@ -32,3 +32,15 @@ export function mwstBetrag(bruttoPreis, mwstSatz) {
 export function nettoPreis(bruttoPreis, mwstSatz) {
   return rund2(bruttoPreis - mwstBetrag(bruttoPreis, mwstSatz));
 }
+
+// Runde 45: wie nettoPreis(), aber auf 4 statt 2 Nachkommastellen -
+// Pendant zu kiosk/mwst.py netto_preis_genau. Einkaufspreise PRO STUECK
+// liegen oft im Cent-Bereich (ein Chupa Chups kostet gut 9 Cent im
+// Einkauf); auf den vollen Cent gerundet summiert sich der Fehler bei 120
+// Stueck schnell auf einen halben Euro. Verkaufspreise am Kiosk bleiben
+// bei nettoPreis() - dort ist der Bruttopreis ein echter Cent-Betrag.
+export function nettoPreisGenau(bruttoPreis, mwstSatz, stellen = 4) {
+  const faktor = Math.pow(10, stellen);
+  const netto = (bruttoPreis * 100) / (100 + mwstSatz);
+  return Math.round((netto + Number.EPSILON) * faktor) / faktor;
+}
