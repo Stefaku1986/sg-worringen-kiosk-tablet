@@ -59,6 +59,12 @@
       <button id="tab-nachbestellung" style="display:none;">Nachbestellungen</button>
       <button id="tab-termine">Termine</button>
       <button id="tab-feedback">Feedback</button>
+      <!-- Runde 43: Warenwirtschaft ist (wie am Rechner) fuer alle Helfer
+           sichtbar, Auswertung und Admin sind wie "Nachbestellungen" nur
+           fuer Administratoren (siehe nachAnmeldungAnzeigen in main.js). -->
+      <button id="tab-warenwirtschaft">Warenwirtschaft</button>
+      <button id="tab-auswertung" style="display:none;">Auswertung</button>
+      <button id="tab-admin" style="display:none;">Admin</button>
     </nav>
 
     <div id="kassenvorschlag-banner" class="kassenvorschlag-banner versteckt">
@@ -414,6 +420,217 @@
           </table>
         </div>
       </section>
+
+      <!-- Warenwirtschaft (Runde 43): Bestand, Wareneingang/Korrektur,
+           Abschreibungen, Inventur - fuer alle Helfer sichtbar, wie am
+           Rechner (siehe kiosk/ui/main_window.py). -->
+      <section id="warenwirtschaft-view" style="display:none;">
+        <div class="karte">
+          <h2 style="margin-top:0; color:var(--blau-dunkel);">Warenbestand</h2>
+          <p class="hinweis">
+            Aktueller Bestand je Produkt – berechnet aus allen Lagerbewegungen
+            (kein separat gepflegtes Feld). Warenwert = Bestand × Einkaufspreis.
+          </p>
+          <div style="display:flex; gap:8px; margin-bottom:10px; flex-wrap:wrap;">
+            <button type="button" class="btn" id="ww-inventur-btn">Inventur durchführen</button>
+            <button type="button" class="btn" id="ww-bestand-drucken-btn">Bestand drucken</button>
+          </div>
+          <table class="liste" id="ww-bestand-tabelle">
+            <thead>
+              <tr><th>Produkt</th><th>Kategorie</th><th>Bestand</th><th>Warenwert</th></tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+
+        <div class="karte" style="max-width:560px;">
+          <h2 style="margin-top:0; color:var(--blau-dunkel);">Wareneingang / Korrektur erfassen</h2>
+          <p class="hinweis">
+            Wareneingang erhöht den Bestand (z.B. Lieferung). Korrektur kann
+            den Bestand erhöhen oder senken (z.B. Zählfehler ausgleichen).
+            Für Bruch/Verderb/Diebstahl bitte stattdessen unten
+            „Abschreibung erfassen“ nutzen.
+          </p>
+          <div id="ww-modus-umschalter" style="display:flex; gap:8px; margin-bottom:10px;">
+            <button type="button" class="kat-umschalt-btn aktiv" id="ww-modus-eingang-btn" data-modus="Wareneingang">Wareneingang</button>
+            <button type="button" class="kat-umschalt-btn" id="ww-modus-korrektur-btn" data-modus="Korrektur">Korrektur</button>
+          </div>
+          <label><b>Produkt:</b></label>
+          <select class="betrag" id="ww-produkt-auswahl"></select>
+          <label id="ww-menge-label"><b>Menge:</b></label>
+          <input type="number" inputmode="numeric" step="1" class="betrag" id="ww-menge-feld" />
+          <label id="ww-einzelpreis-label"><b>Einzelpreis (optional, netto):</b></label>
+          <input type="number" inputmode="decimal" step="0.01" class="betrag" id="ww-einzelpreis-feld" />
+          <label id="ww-mwst-label"><b>MwSt.-Satz (optional):</b></label>
+          <select class="betrag" id="ww-mwst-auswahl">
+            <option value="">–</option>
+            <option value="7">7 %</option>
+            <option value="19">19 %</option>
+          </select>
+          <label id="ww-beleg-label"><b>Beleg-Foto (optional):</b></label>
+          <input type="file" accept="image/*" capture="environment" class="betrag" id="ww-beleg-feld" />
+          <label><b>Kommentar (optional):</b></label>
+          <input type="text" class="betrag" id="ww-kommentar-feld" />
+          <div id="ww-fehler" class="pin-fehler"></div>
+          <button id="ww-erfassen-btn" class="btn btn-primaer" style="width:100%;">Erfassen</button>
+        </div>
+
+        <div class="karte" style="max-width:480px;">
+          <h2 style="margin-top:0; color:var(--blau-dunkel);">Abschreibung erfassen</h2>
+          <p class="hinweis">
+            Für Bruch, Verderb/Ablauf, Diebstahl/Verlust oder Sonstiges –
+            senkt den Bestand und wird in der Monatsabrechnung getrennt
+            ausgewiesen.
+          </p>
+          <label><b>Produkt:</b></label>
+          <select class="betrag" id="ww-absch-produkt-auswahl"></select>
+          <label><b>Menge:</b></label>
+          <input type="number" inputmode="numeric" min="1" step="1" class="betrag" id="ww-absch-menge-feld" />
+          <label><b>Grund:</b></label>
+          <select class="betrag" id="ww-absch-grund-auswahl"></select>
+          <label><b>Kommentar (optional):</b></label>
+          <input type="text" class="betrag" id="ww-absch-kommentar-feld" />
+          <div id="ww-absch-fehler" class="pin-fehler"></div>
+          <button id="ww-absch-erfassen-btn" class="btn btn-primaer" style="width:100%;">Abschreibung erfassen</button>
+        </div>
+
+        <div class="karte">
+          <h2 style="margin-top:0; color:var(--blau-dunkel);">Letzte Abschreibungen</h2>
+          <table class="liste" id="ww-absch-tabelle">
+            <thead>
+              <tr><th>Datum</th><th>Produkt</th><th>Menge</th><th>Grund</th><th>Kommentar</th><th>Status</th><th></th></tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Auswertung / Berichte (Runde 43) - nur fuer Administratoren,
+           analog zu "Nachbestellung" oben. -->
+      <section id="auswertung-view" style="display:none;">
+        <div class="karte">
+          <h2 style="margin-top:0; color:var(--blau-dunkel);">Kennzahlen je Kasse (gesamte Laufzeit)</h2>
+          <div id="au-kasse-kennzahlen" class="zwei-spalten"></div>
+        </div>
+
+        <div class="karte" style="max-width:480px;">
+          <h2 style="margin-top:0; color:var(--blau-dunkel);">Pfand-Gewinn verbuchen</h2>
+          <p class="hinweis">
+            Bucht offenes (noch nicht zurückgegebenes) Kunden-Pfand als
+            Gewinn um – eine reine Umbuchung, kein Geldfluss.
+          </p>
+          <label><b>Kasse:</b></label>
+          <select class="betrag" id="au-pfand-kasse-auswahl">
+            <option value="Jugend">Jugendkasse</option>
+            <option value="Senioren">Seniorenkasse</option>
+          </select>
+          <label><b>Betrag:</b></label>
+          <input type="number" inputmode="decimal" step="0.01" class="betrag" id="au-pfand-betrag-feld" />
+          <label><b>Kommentar (optional):</b></label>
+          <input type="text" class="betrag" id="au-pfand-kommentar-feld" />
+          <div id="au-pfand-fehler" class="pin-fehler"></div>
+          <button id="au-pfand-verbuchen-btn" class="btn btn-primaer" style="width:100%;">Verbuchen</button>
+        </div>
+
+        <div class="karte">
+          <h2 style="margin-top:0; color:var(--blau-dunkel);">Letzte Pfand-Gewinn-Verbuchungen</h2>
+          <table class="liste" id="au-pfand-tabelle">
+            <thead>
+              <tr><th>Datum</th><th>Kasse</th><th>Betrag</th><th>Kommentar</th><th>Status</th><th></th></tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+
+        <div class="karte" style="max-width:480px;">
+          <h2 style="margin-top:0; color:var(--blau-dunkel);">Monatsabrechnung</h2>
+          <label><b>Jahr:</b></label>
+          <input type="number" inputmode="numeric" step="1" class="betrag" id="au-monat-jahr-feld" />
+          <label><b>Monat:</b></label>
+          <select class="betrag" id="au-monat-monat-auswahl"></select>
+          <button id="au-monat-anzeigen-btn" class="btn btn-primaer" style="width:100%;">Anzeigen</button>
+        </div>
+
+        <div class="karte" id="au-monat-ergebnis-karte" style="display:none;">
+          <h2 style="margin-top:0; color:var(--blau-dunkel);">Monatsabrechnung – <span id="au-monat-titel"></span></h2>
+          <div id="au-monat-ergebnis"></div>
+          <button id="au-monat-drucken-btn" class="btn" style="margin-top:10px;">Drucken</button>
+        </div>
+      </section>
+
+      <!-- Admin-Verwaltung (Runde 43) - nur fuer Administratoren: Produkte
+           und Benutzer anlegen/bearbeiten/(de)aktivieren. Wie am Rechner
+           rein UI-seitig geschuetzt, nicht per Datenbank-Regel (siehe
+           repo.js). -->
+      <section id="admin-view" style="display:none;">
+        <div style="display:flex; gap:8px; margin-bottom:10px;">
+          <button type="button" class="kat-umschalt-btn aktiv" id="ad-subtab-produkte-btn">Produkte</button>
+          <button type="button" class="kat-umschalt-btn" id="ad-subtab-benutzer-btn">Benutzer</button>
+        </div>
+
+        <div id="ad-produkte-panel">
+          <div class="karte" style="max-width:560px;">
+            <h2 style="margin-top:0; color:var(--blau-dunkel);">Produkt anlegen</h2>
+            <label><b>Name:</b></label>
+            <input type="text" class="betrag" id="ad-p-name-feld" />
+            <label><b>Kategorie:</b></label>
+            <select class="betrag" id="ad-p-kategorie-auswahl">
+              <option value="Getraenk">Getränke</option>
+              <option value="Speise">Speisen</option>
+            </select>
+            <label><b>MwSt.-Satz:</b></label>
+            <select class="betrag" id="ad-p-mwst-auswahl">
+              <option value="7">7 %</option>
+              <option value="19">19 %</option>
+            </select>
+            <label><b>Einkaufspreis:</b></label>
+            <input type="number" inputmode="decimal" step="0.01" class="betrag" id="ad-p-einkauf-feld" />
+            <label><b>Verkaufspreis:</b></label>
+            <input type="number" inputmode="decimal" step="0.01" class="betrag" id="ad-p-verkauf-feld" />
+            <label><b>Helferpreis (optional, sonst = Verkaufspreis):</b></label>
+            <input type="number" inputmode="decimal" step="0.01" class="betrag" id="ad-p-helferpreis-feld" />
+            <label><b>Pfand pro Stück (optional):</b></label>
+            <input type="number" inputmode="decimal" step="0.01" class="betrag" id="ad-p-pfand-feld" />
+            <div id="ad-p-fehler" class="pin-fehler"></div>
+            <button id="ad-p-anlegen-btn" class="btn btn-primaer" style="width:100%;">Produkt anlegen</button>
+          </div>
+
+          <div class="karte">
+            <h2 style="margin-top:0; color:var(--blau-dunkel);">Alle Produkte</h2>
+            <table class="liste" id="ad-p-tabelle">
+              <thead>
+                <tr><th>Name</th><th>Kategorie</th><th>MwSt.</th><th>EK</th><th>VK</th><th>Helferpreis</th><th>Pfand</th><th>Status</th><th></th></tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div id="ad-benutzer-panel" style="display:none;">
+          <div class="karte" style="max-width:480px;">
+            <h2 style="margin-top:0; color:var(--blau-dunkel);">Benutzer anlegen</h2>
+            <label><b>Name:</b></label>
+            <input type="text" class="betrag" id="ad-b-name-feld" />
+            <label><b>PIN (4–8 Ziffern):</b></label>
+            <input type="text" inputmode="numeric" class="betrag" id="ad-b-pin-feld" />
+            <label style="display:flex; align-items:center; gap:8px; font-weight:700; margin-bottom:14px;">
+              <input type="checkbox" id="ad-b-admin-checkbox" style="width:20px; height:20px;" /> Administrator-Recht
+            </label>
+            <div id="ad-b-fehler" class="pin-fehler"></div>
+            <button id="ad-b-anlegen-btn" class="btn btn-primaer" style="width:100%;">Benutzer anlegen</button>
+          </div>
+
+          <div class="karte">
+            <h2 style="margin-top:0; color:var(--blau-dunkel);">Alle Benutzer</h2>
+            <table class="liste" id="ad-b-tabelle">
+              <thead>
+                <tr><th>Name</th><th>Admin</th><th>Status</th><th></th></tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
     </main>
   </div>
 
@@ -549,6 +766,33 @@
         Internet funktioniert das Kassieren trotzdem normal weiter, es wird
         beim nächsten Mal nachgeholt. Über die Auswahl <b>„Aktive Kasse“</b>
         oben lässt sich zwischen Jugend- und Seniorenkasse umschalten.</p>
+
+        <h3>Warenwirtschaft</h3>
+        <p>Im Reiter <b>„Warenwirtschaft“</b> (für alle Helfer sichtbar)
+        steht der aktuelle Warenbestand je Produkt. <b>„Wareneingang“</b>
+        bucht eine Lieferung, <b>„Korrektur“</b> gleicht Zählfehler in
+        beide Richtungen aus – für ein Beleg-Foto kann direkt die
+        Tablet-Kamera genutzt werden. <b>„Abschreibung erfassen“</b> ist
+        für Bruch, Verderb, Diebstahl/Verlust oder Sonstiges gedacht und
+        wird getrennt ausgewiesen. Der Knopf <b>„Inventur durchführen“</b>
+        öffnet eine Liste aller Produkte zum Nachzählen – abweichende
+        Mengen werden automatisch als Korrektur gebucht.</p>
+
+        <h3>Auswertung (nur Administratoren)</h3>
+        <p>Im Reiter <b>„Auswertung“</b> stehen Umsatz/Gewinn je Kasse über
+        die gesamte Laufzeit, die Verbuchung von offenem Kunden-Pfand als
+        Gewinn (<b>„Pfand-Gewinn verbuchen“</b>) sowie die
+        <b>Monatsabrechnung</b> für einen ausgewählten Monat – mit
+        Verkäufen je Produkt, Wareneinkauf, Abschreibungen und
+        MwSt.-Zahllast. Über <b>„Drucken“</b> öffnet sich ein
+        Browser-Druckfenster.</p>
+
+        <h3>Admin-Verwaltung (nur Administratoren)</h3>
+        <p>Im Reiter <b>„Admin“</b> lassen sich Produkte und Benutzer
+        anlegen, bearbeiten und deaktivieren – Benutzer zusätzlich wieder
+        aktivieren. Ein PIN lässt sich über <b>„PIN setzen“</b> ändern.
+        Es muss dabei immer mindestens ein aktiver Administrator bestehen
+        bleiben.</p>
       </div>
       <div class="aktionen">
         <button id="hilfe-schliessen-btn" class="btn btn-primaer">Schließen</button>
@@ -592,6 +836,75 @@
       <div class="aktionen">
         <button id="fbs-abbrechen-btn" class="btn">Abbrechen</button>
         <button id="fbs-speichern-btn" class="btn btn-primaer">Speichern</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Inventur (Runde 43) -->
+  <div id="inventur-overlay" class="overlay versteckt">
+    <div class="modal hilfe-modal">
+      <h2>Inventur durchführen</h2>
+      <p class="hinweis">
+        Für jedes Produkt den tatsächlich gezählten Bestand eintragen – leer
+        gelassene Felder bedeuten „keine Änderung“. Für jedes Produkt mit
+        Abweichung wird automatisch eine Korrektur-Lagerbewegung gebucht.
+      </p>
+      <div id="inventur-liste" style="max-height:50vh; overflow-y:auto;"></div>
+      <label><b>Kommentar (optional):</b></label>
+      <input type="text" class="betrag" id="inventur-kommentar-feld" />
+      <div id="inventur-fehler" class="pin-fehler"></div>
+      <div class="aktionen">
+        <button id="inventur-abbrechen-btn" class="btn">Abbrechen</button>
+        <button id="inventur-speichern-btn" class="btn btn-primaer">Inventur speichern</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Produkt bearbeiten (Runde 43) -->
+  <div id="produkt-bearbeiten-overlay" class="overlay versteckt">
+    <div class="modal">
+      <h2>Produkt bearbeiten</h2>
+      <label><b>Name:</b></label>
+      <input type="text" class="betrag" id="pb-name-feld" />
+      <label><b>Kategorie:</b></label>
+      <select class="betrag" id="pb-kategorie-auswahl">
+        <option value="Getraenk">Getränke</option>
+        <option value="Speise">Speisen</option>
+      </select>
+      <label><b>MwSt.-Satz:</b></label>
+      <select class="betrag" id="pb-mwst-auswahl">
+        <option value="7">7 %</option>
+        <option value="19">19 %</option>
+      </select>
+      <label><b>Einkaufspreis:</b></label>
+      <input type="number" inputmode="decimal" step="0.01" class="betrag" id="pb-einkauf-feld" />
+      <label><b>Verkaufspreis:</b></label>
+      <input type="number" inputmode="decimal" step="0.01" class="betrag" id="pb-verkauf-feld" />
+      <label><b>Helferpreis:</b></label>
+      <input type="number" inputmode="decimal" step="0.01" class="betrag" id="pb-helferpreis-feld" />
+      <label><b>Pfand pro Stück:</b></label>
+      <input type="number" inputmode="decimal" step="0.01" class="betrag" id="pb-pfand-feld" />
+      <div id="pb-fehler" class="pin-fehler"></div>
+      <div class="aktionen">
+        <button id="pb-abbrechen-btn" class="btn">Abbrechen</button>
+        <button id="pb-speichern-btn" class="btn btn-primaer">Speichern</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Benutzer bearbeiten (Runde 43) -->
+  <div id="benutzer-bearbeiten-overlay" class="overlay versteckt">
+    <div class="modal">
+      <h2>Benutzer bearbeiten</h2>
+      <label><b>Name:</b></label>
+      <input type="text" class="betrag" id="bb-name-feld" />
+      <label style="display:flex; align-items:center; gap:8px; font-weight:700; margin-bottom:14px;">
+        <input type="checkbox" id="bb-admin-checkbox" style="width:20px; height:20px;" /> Administrator-Recht
+      </label>
+      <div id="bb-fehler" class="pin-fehler"></div>
+      <div class="aktionen">
+        <button id="bb-abbrechen-btn" class="btn">Abbrechen</button>
+        <button id="bb-speichern-btn" class="btn btn-primaer">Speichern</button>
       </div>
     </div>
   </div>

@@ -16,7 +16,7 @@
 // und wird beim naechsten Mal wiederholt; das Kassieren selbst ist davon
 // nie betroffen.
 
-import { SUPABASE_URL, SUPABASE_ANON_KEY } from "./config.js";
+import { SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_BELEGE_BUCKET } from "./config.js";
 import { getAll, putAll, ersetzeAlle } from "./db.js";
 
 // Der Supabase-Client wird bewusst per dynamischem import() erst beim
@@ -28,8 +28,17 @@ import { getAll, putAll, ersetzeAlle } from "./db.js";
 // offline - nur der eigentliche Sync-Versuch schlaegt dann fehl (und wird
 // unten sauber abgefangen).
 
-const NUR_LESEN_TABELLEN = ["produkte", "benutzer", "trainingszeiten"];
+// Runde 43: "produkte" und "benutzer" sind jetzt auf dem Tablet ebenfalls
+// beschreibbar (Produkt-/Benutzerverwaltung, siehe repo.js) - vorher reine
+// Lesekopien, siehe Projekt-Status-Dokument "Runde 43". "push vor pull"
+// (wie beim Feedback-Reiter) sorgt dafuer, dass eine hier vorgenommene
+// Aenderung nicht durch den direkt anschliessenden Pull ueberschrieben
+// wird; bei gleichzeitiger Bearbeitung auf zwei Geraeten gewinnt (wie am
+// Rechner) der zuletzt synchronisierte Stand ("Last-Write-Wins").
+const NUR_LESEN_TABELLEN = ["trainingszeiten"];
 const SCHREIBBARE_TABELLEN = [
+  "produkte",
+  "benutzer",
   "kassiervorgaenge",
   "positionen",
   "lagerbewegungen",
@@ -50,6 +59,8 @@ const SCHREIBBARE_TABELLEN = [
   // unveraenderliche Ereignisse mit Storno.
   "sonstige_ausgaben",
   "bargeld_entnahmen",
+  // Runde 43: Pfand-Gewinn-Verbuchungen (Auswertung, siehe repo.js).
+  "pfand_gewinn_verbuchungen",
 ];
 const ALLE_TABELLEN = [...NUR_LESEN_TABELLEN, ...SCHREIBBARE_TABELLEN];
 
@@ -60,6 +71,8 @@ const BOOL_SPALTEN = {
   trainingszeiten: ["aktiv"],
   positionen: ["ist_helferpreis", "ist_pfandrueckgabe", "pfand_erlassen"],
   benutzer: ["ist_admin", "aktiv"],
+  // Runde 43: Abschreibungen (siehe repo.js).
+  lagerbewegungen: ["ist_abschreibung"],
 };
 
 let client = null;
@@ -198,4 +211,43 @@ export async function syncJetzt() {
 export function syncAutomatikStarten(intervallSekunden) {
   window.addEventListener("online", () => syncJetzt());
   setInterval(() => syncJetzt(), intervallSekunden * 1000);
+}
+
+// ---------------------------------------------------------------------
+// Beleg-Foto-Upload (Runde 43) - Pendant zur Beleg-Upload-Logik in
+// kiosk/sync.py (_belege_hochladen), aber ohne den Umweg ueber einen
+// lokalen Ordner: das Tablet hat keinen Dateisystem-Ordner zum Scannen,
+// stattdessen wird ein per Kamera aufgenommenes Foto SOFORT beim Erfassen
+// eines Wareneingangs direkt in denselben Supabase-Storage-Bucket
+// "belege" hochgeladen (kein OCR, reine Bild-Ablage). Objektname = neue
+// UUID + Original-Dateiendung, damit Kollisionen zwischen Geraeten
+// praktisch ausgeschlossen sind (identisches Prinzip wie am Rechner).
+// Wirft bei einem Fehler (z.B. kein Internet) eine Exception - der
+// Aufrufer (main.js) faengt das ab und erfasst den Wareneingang trotzdem,
+// nur ohne Beleg-Foto (Offline-Faehigkeit hat Vorrang).
+// ---------------------------------------------------------------------
+
+function belegContentType(dateiname) {
+  const endung = dateiname.slice(dateiname.lastIndexOf(".")).toLowerCase();
+  const typen = {
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".png": "image/png",
+    ".pdf": "application/pdf",
+    ".heic": "image/heic",
+  };
+  return typen[endung] || "application/octet-stream";
+}
+
+export async function belegHochladen(datei) {
+  const endung = datei.name && datei.name.includes(".")
+    ? datei.name.slice(datei.name.lastIndexOf("."))
+    : ".jpg";
+  const objektname = `${crypto.randomUUID()}${endung}`;
+  const sb = await supabase();
+  const { error } = await sb.storage
+    .from(SUPABASE_BELEGE_BUCKET)
+    .upload(objektname, datei, { contentType: belegContentType(objektname), upsert: true });
+  if (error) throw error;
+  return objektname;
 }

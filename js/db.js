@@ -11,13 +11,14 @@
 // Push-dann-Pull-Prinzip wie kiosk/sync.py).
 
 const DB_NAME = "sg-worringen-kiosk-tablet";
-// Version 7 (Runde 27, Buchhaltungs-Erweiterung): zwei neue Stores
-// "sonstige_ausgaben" und "bargeld_entnahmen" hinzugefuegt. Ein
-// IndexedDB-"onupgradeneeded" laeuft nur beim Erstoeffnen ODER bei einer
-// hoeheren Versionsnummer als zuvor - deshalb muss diese Zahl bei jedem
-// neuen Store erhoeht werden, sonst bleiben bereits installierte Tablets
-// bei den alten Stores haengen.
-const DB_VERSION = 7;
+// Version 8 (Runde 43, Warenwirtschaft/Auswertung ans Tablet nachgezogen):
+// ein neuer Store "pfand_gewinn_verbuchungen" hinzugefuegt (Pendant zur
+// gleichnamigen Tabelle am Rechner, Runde 40). Ein IndexedDB-
+// "onupgradeneeded" laeuft nur beim Erstoeffnen ODER bei einer hoeheren
+// Versionsnummer als zuvor - deshalb muss diese Zahl bei jedem neuen Store
+// erhoeht werden, sonst bleiben bereits installierte Tablets bei den alten
+// Stores haengen.
+const DB_VERSION = 8;
 
 // Bewusst ohne zusaetzliche Indizes: bei den ueberschaubaren Datenmengen
 // eines Vereins-Kiosks ist ein einfaches getAll() + Filtern in JavaScript
@@ -42,6 +43,9 @@ const STORES = {
   // Storno statt Aendern/Loeschen (siehe js/repo.js).
   sonstige_ausgaben: { keyPath: "id" },
   bargeld_entnahmen: { keyPath: "id" },
+  // Runde 43: Pfand-Gewinn-Verbuchungen (siehe js/repo.js) - unveraender-
+  // liches Ereignis mit Storno statt Aendern/Loeschen, wie oben.
+  pfand_gewinn_verbuchungen: { keyPath: "id" },
   meta: { keyPath: "schluessel" },
 };
 

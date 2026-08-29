@@ -10,11 +10,14 @@ import {
   FEEDBACK_STATUS_LABEL,
   SCHIEDSRICHTER_WASSER_STILL_PRODUKT_ID,
   SCHIEDSRICHTER_WASSER_MEDIUM_PRODUKT_ID,
+  VERANSTALTUNGEN,
+  MWST_SAETZE,
 } from "./config.js";
-import { euro, deZahl, nettoPreis } from "./format.js";
+import { euro, deZahl, nettoPreis, rund2 } from "./format.js";
 import * as repo from "./repo.js";
 import * as session from "./session.js";
-import { syncJetzt, syncAutomatikStarten, onSynchronisiert } from "./sync.js";
+import { syncJetzt, syncAutomatikStarten, onSynchronisiert, belegHochladen } from "./sync.js";
+import { geraetId } from "./db.js";
 
 // ---------------------------------------------------------------------
 // DOM-Referenzen
@@ -46,15 +49,20 @@ const tabEntnahmen = el("tab-entnahmen");
 const tabNachbestellung = el("tab-nachbestellung");
 const tabTermine = el("tab-termine");
 const tabFeedback = el("tab-feedback");
+// Runde 43: Warenwirtschaft/Auswertung/Admin (siehe Projekt-Status-
+// Dokument, "Tablet um Windows-Funktionen erweitern").
+const tabWarenwirtschaft = el("tab-warenwirtschaft");
+const tabAuswertung = el("tab-auswertung");
+const tabAdmin = el("tab-admin");
 
 // Ansichten, die (Runde 30) unter dem gemeinsamen Reiter "Mehr" gebuendelt
 // sind, um die Reiterleiste kuerzer zu machen (analog zum "Admin"-Reiter
 // der Windows-App, dort aber nach Admin-Rechten gruppiert - auf dem
-// Tablet ist bis auf "nachbestellung" alles hier fuer alle Helfer
-// sichtbar, es geht nur um weniger Reiter oben, siehe unten). Runde 34:
-// "schiedsrichter" ist auf Nutzerwunsch wieder ein eigener, direkt
-// sichtbarer Reiter oben (wie auf der Windows-App) und deshalb hier
-// NICHT mehr mit drin.
+// Tablet ist bis auf "nachbestellung"/"auswertung"/"admin" alles hier
+// fuer alle Helfer sichtbar, es geht nur um weniger Reiter oben, siehe
+// unten). Runde 34: "schiedsrichter" ist auf Nutzerwunsch wieder ein
+// eigener, direkt sichtbarer Reiter oben (wie auf der Windows-App) und
+// deshalb hier NICHT mehr mit drin.
 const MEHR_ANSICHTEN = [
   "einzahlen",
   "ausgaben",
@@ -62,6 +70,9 @@ const MEHR_ANSICHTEN = [
   "nachbestellung",
   "termine",
   "feedback",
+  "warenwirtschaft",
+  "auswertung",
+  "admin",
 ];
 
 const kassenvorschlagBanner = el("kassenvorschlag-banner");
@@ -80,6 +91,9 @@ const entnahmenView = el("entnahmen-view");
 const nachbestellungView = el("nachbestellung-view");
 const termineView = el("termine-view");
 const feedbackView = el("feedback-view");
+const warenwirtschaftView = el("warenwirtschaft-view");
+const auswertungView = el("auswertung-view");
+const adminView = el("admin-view");
 
 const loginNutzerauswahl = el("login-nutzerauswahl");
 const nutzerGrid = el("nutzer-grid");
@@ -196,6 +210,106 @@ const fbsAntwortFeld = el("fbs-antwort-feld");
 const fbsAbbrechenBtn = el("fbs-abbrechen-btn");
 const fbsSpeichernBtn = el("fbs-speichern-btn");
 
+// ---------------------------------------------------------------------
+// Warenwirtschaft (Runde 43)
+// ---------------------------------------------------------------------
+const wwInventurBtn = el("ww-inventur-btn");
+const wwBestandDruckenBtn = el("ww-bestand-drucken-btn");
+const wwBestandTabelleBody = document.querySelector("#ww-bestand-tabelle tbody");
+
+const wwModusEingangBtn = el("ww-modus-eingang-btn");
+const wwModusKorrekturBtn = el("ww-modus-korrektur-btn");
+const wwProduktAuswahl = el("ww-produkt-auswahl");
+const wwMengeLabel = el("ww-menge-label");
+const wwMengeFeld = el("ww-menge-feld");
+const wwEinzelpreisLabel = el("ww-einzelpreis-label");
+const wwEinzelpreisFeld = el("ww-einzelpreis-feld");
+const wwMwstLabel = el("ww-mwst-label");
+const wwMwstAuswahl = el("ww-mwst-auswahl");
+const wwBelegLabel = el("ww-beleg-label");
+const wwBelegFeld = el("ww-beleg-feld");
+const wwKommentarFeld = el("ww-kommentar-feld");
+const wwFehler = el("ww-fehler");
+const wwErfassenBtn = el("ww-erfassen-btn");
+
+const wwAbschProduktAuswahl = el("ww-absch-produkt-auswahl");
+const wwAbschMengeFeld = el("ww-absch-menge-feld");
+const wwAbschGrundAuswahl = el("ww-absch-grund-auswahl");
+const wwAbschKommentarFeld = el("ww-absch-kommentar-feld");
+const wwAbschFehler = el("ww-absch-fehler");
+const wwAbschErfassenBtn = el("ww-absch-erfassen-btn");
+const wwAbschTabelleBody = document.querySelector("#ww-absch-tabelle tbody");
+
+const inventurOverlay = el("inventur-overlay");
+const inventurListe = el("inventur-liste");
+const inventurKommentarFeld = el("inventur-kommentar-feld");
+const inventurFehler = el("inventur-fehler");
+const inventurAbbrechenBtn = el("inventur-abbrechen-btn");
+const inventurSpeichernBtn = el("inventur-speichern-btn");
+
+// ---------------------------------------------------------------------
+// Auswertung / Monatsabrechnung (Runde 43)
+// ---------------------------------------------------------------------
+const auKasseKennzahlen = el("au-kasse-kennzahlen");
+const auPfandKasseAuswahl = el("au-pfand-kasse-auswahl");
+const auPfandBetragFeld = el("au-pfand-betrag-feld");
+const auPfandKommentarFeld = el("au-pfand-kommentar-feld");
+const auPfandFehler = el("au-pfand-fehler");
+const auPfandVerbuchenBtn = el("au-pfand-verbuchen-btn");
+const auPfandTabelleBody = document.querySelector("#au-pfand-tabelle tbody");
+const auMonatJahrFeld = el("au-monat-jahr-feld");
+const auMonatMonatAuswahl = el("au-monat-monat-auswahl");
+const auMonatAnzeigenBtn = el("au-monat-anzeigen-btn");
+const auMonatErgebnisKarte = el("au-monat-ergebnis-karte");
+const auMonatTitel = el("au-monat-titel");
+const auMonatErgebnis = el("au-monat-ergebnis");
+const auMonatDruckenBtn = el("au-monat-drucken-btn");
+
+// ---------------------------------------------------------------------
+// Admin-Verwaltung: Produkte/Benutzer (Runde 43)
+// ---------------------------------------------------------------------
+const adSubtabProdukteBtn = el("ad-subtab-produkte-btn");
+const adSubtabBenutzerBtn = el("ad-subtab-benutzer-btn");
+const adProduktePanel = el("ad-produkte-panel");
+const adBenutzerPanel = el("ad-benutzer-panel");
+
+const adPNameFeld = el("ad-p-name-feld");
+const adPKategorieAuswahl = el("ad-p-kategorie-auswahl");
+const adPMwstAuswahl = el("ad-p-mwst-auswahl");
+const adPEinkaufFeld = el("ad-p-einkauf-feld");
+const adPVerkaufFeld = el("ad-p-verkauf-feld");
+const adPHelferpreisFeld = el("ad-p-helferpreis-feld");
+const adPPfandFeld = el("ad-p-pfand-feld");
+const adPFehler = el("ad-p-fehler");
+const adPAnlegenBtn = el("ad-p-anlegen-btn");
+const adPTabelleBody = document.querySelector("#ad-p-tabelle tbody");
+
+const adBNameFeld = el("ad-b-name-feld");
+const adBPinFeld = el("ad-b-pin-feld");
+const adBAdminCheckbox = el("ad-b-admin-checkbox");
+const adBFehler = el("ad-b-fehler");
+const adBAnlegenBtn = el("ad-b-anlegen-btn");
+const adBTabelleBody = document.querySelector("#ad-b-tabelle tbody");
+
+const produktBearbeitenOverlay = el("produkt-bearbeiten-overlay");
+const pbNameFeld = el("pb-name-feld");
+const pbKategorieAuswahl = el("pb-kategorie-auswahl");
+const pbMwstAuswahl = el("pb-mwst-auswahl");
+const pbEinkaufFeld = el("pb-einkauf-feld");
+const pbVerkaufFeld = el("pb-verkauf-feld");
+const pbHelferpreisFeld = el("pb-helferpreis-feld");
+const pbPfandFeld = el("pb-pfand-feld");
+const pbFehler = el("pb-fehler");
+const pbAbbrechenBtn = el("pb-abbrechen-btn");
+const pbSpeichernBtn = el("pb-speichern-btn");
+
+const benutzerBearbeitenOverlay = el("benutzer-bearbeiten-overlay");
+const bbNameFeld = el("bb-name-feld");
+const bbAdminCheckbox = el("bb-admin-checkbox");
+const bbFehler = el("bb-fehler");
+const bbAbbrechenBtn = el("bb-abbrechen-btn");
+const bbSpeichernBtn = el("bb-speichern-btn");
+
 const bezahlenOverlay = el("bezahlen-overlay");
 const bezahlenSumme = el("bezahlen-summe");
 const gegebenFeld = el("gegeben-feld");
@@ -231,6 +345,14 @@ let letzterKassensturzSoll = 0;
 let vorgaengeCache = []; // fuer Storno-Ansicht
 let abgelehnteKassenvorschlaege = new Set(); // "schluessel" bereits verworfener Vorschlaege
 let letzteMehrAnsicht = null; // zuletzt aktive Unteransicht innerhalb "Mehr", siehe zeigeHauptView
+
+// Runde 43: Warenwirtschaft/Auswertung/Admin-Verwaltung.
+let wwModus = "Wareneingang"; // 'Wareneingang' | 'Korrektur', siehe wwModusUmschalten
+let adminSubtab = "produkte"; // 'produkte' | 'benutzer', siehe adminSubtabUmschalten
+let bearbeitenProduktId = null; // waehrend #produkt-bearbeiten-overlay offen ist
+let bearbeitenBenutzerId = null; // waehrend #benutzer-bearbeiten-overlay offen ist
+let bearbeitenBenutzerWarAdmin = false; // Admin-Status beim Oeffnen des Bearbeiten-Dialogs, fuer die "mind. 1 Admin"-Regel
+let letzteMonatsabrechnung = null; // fuer den Drucken-Knopf, siehe monatsabrechnungAnzeigen/monatsabrechnungDrucken
 
 // ---------------------------------------------------------------------
 // Hinweis-/Bestaetigungs-Dialog
@@ -357,6 +479,9 @@ function zeigeHauptView(name) {
     nachbestellungView.style.display = "none";
     termineView.style.display = "none";
     feedbackView.style.display = "none";
+    warenwirtschaftView.style.display = "none";
+    auswertungView.style.display = "none";
+    adminView.style.display = "none";
     kassenvorschlagBanner.classList.add("versteckt");
     tabsEl.style.display = "none";
     mehrTabsEl.style.display = "none";
@@ -385,6 +510,9 @@ function zeigeHauptView(name) {
   nachbestellungView.style.display = name === "nachbestellung" ? "" : "none";
   termineView.style.display = name === "termine" ? "" : "none";
   feedbackView.style.display = name === "feedback" ? "" : "none";
+  warenwirtschaftView.style.display = name === "warenwirtschaft" ? "" : "none";
+  auswertungView.style.display = name === "auswertung" ? "" : "none";
+  adminView.style.display = name === "admin" ? "" : "none";
 
   // "Mehr"-Buendel (Runde 30): eine der 7 Unteransichten ist aktiv -> der
   // Reiter "Mehr" wird als aktiv markiert und die Unter-Reiterleiste
@@ -405,6 +533,9 @@ function zeigeHauptView(name) {
   tabNachbestellung.classList.toggle("aktiv", name === "nachbestellung");
   tabTermine.classList.toggle("aktiv", name === "termine");
   tabFeedback.classList.toggle("aktiv", name === "feedback");
+  tabWarenwirtschaft.classList.toggle("aktiv", name === "warenwirtschaft");
+  tabAuswertung.classList.toggle("aktiv", name === "auswertung");
+  tabAdmin.classList.toggle("aktiv", name === "admin");
 
   if (name === "verkauf") renderProduktGrid();
   if (name === "storno") renderStornoListe();
@@ -416,6 +547,9 @@ function zeigeHauptView(name) {
   if (name === "nachbestellung") renderNachbestellungen();
   if (name === "termine") renderTermine();
   if (name === "feedback") renderFeedback();
+  if (name === "warenwirtschaft") renderWarenwirtschaft();
+  if (name === "auswertung") renderAuswertung();
+  if (name === "admin") renderAdmin();
 }
 
 // ---------------------------------------------------------------------
@@ -538,6 +672,11 @@ function nachAnmeldungAnzeigen() {
   // Administratoren sichtbar - analog zu den Admin-only-Reitern der
   // Windows-App (siehe main_window.py, _admin_sichtbarkeit_anwenden).
   tabNachbestellung.style.display = benutzer.ist_admin ? "" : "none";
+  // Runde 43: Auswertung/Admin-Verwaltung ebenfalls nur fuer
+  // Administratoren - Warenwirtschaft bleibt (wie am Rechner) fuer alle
+  // Helfer sichtbar.
+  tabAuswertung.style.display = benutzer.ist_admin ? "" : "none";
+  tabAdmin.style.display = benutzer.ist_admin ? "" : "none";
   kasseAuswahl.value = session.getAktiveKasse();
   warenkorb = [];
   nachbestellungPositionen = [];
@@ -1993,6 +2132,869 @@ function formatUhrzeit(iso) {
 }
 
 // ---------------------------------------------------------------------
+// Drucken ueber den Browser (Runde 43) - ersetzt Qt's
+// QPrintPreviewDialog vom Rechner (siehe kiosk/ui/druck.py): oeffnet ein
+// neues Fenster/Tab mit dem uebergebenen HTML-Inhalt (Klasse "druck-seite",
+// siehe css/app.css) und ruft sofort den Browser-eigenen Druckdialog auf.
+// Wird das Popup vom Browser blockiert, bleibt zumindest ein Hinweis statt
+// eines stillen Fehlschlags.
+// ---------------------------------------------------------------------
+
+function druckenOeffnen(titel, innerHtml) {
+  const fenster = window.open("", "_blank");
+  if (!fenster) {
+    zeigeHinweis(
+      "Drucken nicht möglich",
+      "Das Druckfenster wurde vom Browser blockiert. Bitte Popups für diese Seite erlauben und erneut versuchen."
+    );
+    return;
+  }
+  fenster.document.write(
+    `<!doctype html><html lang="de"><head><meta charset="utf-8"><title>${titel}</title>` +
+      `<link rel="stylesheet" href="css/app.css"></head>` +
+      `<body class="druck-seite">${innerHtml}</body></html>`
+  );
+  fenster.document.close();
+  fenster.focus();
+  // Kurze Verzoegerung, damit das Stylesheet sicher geladen ist, bevor der
+  // Druckdialog erscheint - ohne diese kann der erste Ausdruck ungestylt sein.
+  setTimeout(() => fenster.print(), 300);
+}
+
+// ---------------------------------------------------------------------
+// Warenwirtschaft: Bestand, Wareneingang/Korrektur, Abschreibungen,
+// Inventur (Runde 43) - Pendant zu den entsprechenden Bereichen der
+// Windows-App (kiosk/ui/main_window.py, Reiter "Lager"). Fuer alle Helfer
+// sichtbar (siehe nachAnmeldungAnzeigen), wie am Rechner.
+// ---------------------------------------------------------------------
+
+function wwProduktAuswahlFuellen(select) {
+  const aktuellerWert = select.value;
+  select.innerHTML = "";
+  for (const produkt of produkteCache) {
+    const option = document.createElement("option");
+    option.value = produkt.id;
+    option.textContent = `${produkt.name} (${KATEGORIE_LABEL[produkt.kategorie] ?? produkt.kategorie})`;
+    select.appendChild(option);
+  }
+  if (aktuellerWert && produkteCache.some((p) => p.id === aktuellerWert)) {
+    select.value = aktuellerWert;
+  }
+}
+
+function wwModusUmschalten(modus) {
+  wwModus = modus;
+  wwModusEingangBtn.classList.toggle("aktiv", modus === "Wareneingang");
+  wwModusKorrekturBtn.classList.toggle("aktiv", modus === "Korrektur");
+  wwMengeLabel.innerHTML = modus === "Wareneingang"
+    ? "<b>Menge (Stück, z.B. 24 für einen Kasten):</b>"
+    : "<b>Menge (positiv = Bestand erhöhen, negativ = senken):</b>";
+  const zeigePreisfelder = modus === "Wareneingang";
+  wwEinzelpreisLabel.style.display = zeigePreisfelder ? "" : "none";
+  wwEinzelpreisFeld.style.display = zeigePreisfelder ? "" : "none";
+  wwMwstLabel.style.display = zeigePreisfelder ? "" : "none";
+  wwMwstAuswahl.style.display = zeigePreisfelder ? "" : "none";
+  wwBelegLabel.style.display = zeigePreisfelder ? "" : "none";
+  wwBelegFeld.style.display = zeigePreisfelder ? "" : "none";
+}
+
+async function renderWarenwirtschaft() {
+  wwProduktAuswahlFuellen(wwProduktAuswahl);
+  wwProduktAuswahlFuellen(wwAbschProduktAuswahl);
+
+  if (!wwAbschGrundAuswahl.options.length) {
+    for (const grund of repo.ABSCHREIBUNG_GRUENDE) {
+      const option = document.createElement("option");
+      option.value = grund;
+      option.textContent = grund;
+      wwAbschGrundAuswahl.appendChild(option);
+    }
+  }
+
+  const bericht = await repo.warenbestandBericht();
+  const alleProdukte = await repo.listeProdukte(false);
+  const preisJeId = Object.fromEntries(alleProdukte.map((p) => [p.id, p.einkaufspreis || 0]));
+
+  wwBestandTabelleBody.innerHTML = "";
+  for (const zeile of bericht) {
+    const warenwert = rund2(zeile.bestand * (preisJeId[zeile.produkt_id] || 0));
+    const tr = document.createElement("tr");
+    for (const wert of [
+      zeile.name,
+      KATEGORIE_LABEL[zeile.kategorie] ?? zeile.kategorie,
+      String(zeile.bestand),
+      euro(warenwert),
+    ]) {
+      const td = document.createElement("td");
+      td.textContent = wert;
+      tr.appendChild(td);
+    }
+    wwBestandTabelleBody.appendChild(tr);
+  }
+
+  await renderAbschreibungen();
+}
+
+async function bestandDrucken() {
+  const bericht = await repo.warenbestandBericht();
+  const alleProdukte = await repo.listeProdukte(false);
+  const preisJeId = Object.fromEntries(alleProdukte.map((p) => [p.id, p.einkaufspreis || 0]));
+  let gesamtwert = 0;
+  const zeilenHtml = bericht
+    .map((z) => {
+      const wert = rund2(z.bestand * (preisJeId[z.produkt_id] || 0));
+      gesamtwert = rund2(gesamtwert + wert);
+      return `<tr><td>${z.name}</td><td>${KATEGORIE_LABEL[z.kategorie] ?? z.kategorie}</td><td>${z.bestand}</td><td>${euro(wert)}</td></tr>`;
+    })
+    .join("");
+  const html = `
+    <h1>SG Köln-Worringen – Warenbestand</h1>
+    <p>Stand: ${formatDatumUhrzeit(new Date().toISOString())}</p>
+    <table>
+      <thead><tr><th>Produkt</th><th>Kategorie</th><th>Bestand</th><th>Warenwert</th></tr></thead>
+      <tbody>${zeilenHtml}
+      <tr class="gesamt-zeile"><td colspan="3">Gesamt</td><td>${euro(gesamtwert)}</td></tr>
+      </tbody>
+    </table>`;
+  druckenOeffnen("Warenbestand", html);
+}
+
+async function renderAbschreibungen() {
+  const alle = await repo.letzteAbschreibungen(100);
+  const stornierteIds = new Set(alle.filter((a) => a.storno_von).map((a) => a.storno_von));
+  wwAbschTabelleBody.innerHTML = "";
+  for (const absch of alle) {
+    const tr = document.createElement("tr");
+    let status = "Aktiv";
+    if (absch.storno_von) status = "Storno";
+    else if (stornierteIds.has(absch.id)) status = "Storniert";
+    if (status !== "Aktiv") tr.classList.add("storniert");
+
+    for (const wert of [
+      formatDatumUhrzeit(absch.datum),
+      absch.produkt_name,
+      String(Math.abs(absch.menge)),
+      absch.abschreibung_grund || "–",
+      absch.kommentar || "–",
+      status,
+    ]) {
+      const td = document.createElement("td");
+      td.textContent = wert;
+      tr.appendChild(td);
+    }
+
+    const tdAktion = document.createElement("td");
+    if (status === "Aktiv") {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "btn";
+      btn.textContent = "Stornieren";
+      btn.onclick = async () => {
+        const ok = await zeigeBestaetigung(
+          "Abschreibung stornieren?",
+          `Die Abschreibung von ${Math.abs(absch.menge)} × „${absch.produkt_name}“ (${absch.abschreibung_grund}) wird storniert. Das kann nicht rückgängig gemacht werden.`,
+          "Stornieren"
+        );
+        if (!ok) return;
+        const benutzer = session.getAktuellerBenutzer();
+        try {
+          await repo.abschreibungStornieren(absch.id, benutzer.name);
+        } catch (exc) {
+          zeigeHinweis("Fehler beim Stornieren", exc.message ?? String(exc));
+          return;
+        }
+        renderWarenwirtschaft();
+      };
+      tdAktion.appendChild(btn);
+    }
+    tr.appendChild(tdAktion);
+    wwAbschTabelleBody.appendChild(tr);
+  }
+}
+
+async function wareneingangErfassen() {
+  wwFehler.textContent = "";
+  const produktId = wwProduktAuswahl.value;
+  const menge = parseInt(wwMengeFeld.value, 10);
+  if (!produktId) {
+    wwFehler.textContent = "Bitte ein Produkt auswählen.";
+    return;
+  }
+  if (isNaN(menge) || menge === 0) {
+    wwFehler.textContent = "Bitte eine gültige Menge ungleich 0 eingeben.";
+    return;
+  }
+  if (wwModus === "Wareneingang" && menge < 0) {
+    wwFehler.textContent = "Beim Wareneingang muss die Menge größer als 0 sein.";
+    return;
+  }
+  const einzelpreisWert = wwEinzelpreisFeld.value.trim();
+  const einzelpreis = wwModus === "Wareneingang" && einzelpreisWert !== "" ? parseFloat(einzelpreisWert) : null;
+  const mwstWert = wwMwstAuswahl.value;
+  const mwstSatz = wwModus === "Wareneingang" && mwstWert !== "" ? parseFloat(mwstWert) : null;
+
+  let belegPfad = null;
+  const belegDatei = wwModus === "Wareneingang" ? wwBelegFeld.files[0] : null;
+  if (belegDatei) {
+    try {
+      belegPfad = await belegHochladen(belegDatei);
+    } catch (exc) {
+      zeigeHinweis(
+        "Beleg-Foto nicht hochgeladen",
+        "Der Wareneingang wird trotzdem gebucht, aber ohne Beleg-Foto (vermutlich fehlt gerade eine Internetverbindung): " +
+          (exc.message ?? String(exc))
+      );
+    }
+  }
+
+  const benutzer = session.getAktuellerBenutzer();
+  const gid = await geraetId();
+  try {
+    await repo.lagerbewegungErfassen(
+      produktId,
+      wwModus,
+      wwModus === "Wareneingang" ? Math.abs(menge) : menge,
+      wwKommentarFeld.value.trim() || null,
+      benutzer.name,
+      gid,
+      einzelpreis,
+      mwstSatz,
+      belegPfad
+    );
+  } catch (exc) {
+    wwFehler.textContent = exc.message ?? String(exc);
+    return;
+  }
+  wwMengeFeld.value = "";
+  wwEinzelpreisFeld.value = "";
+  wwMwstAuswahl.value = "";
+  wwBelegFeld.value = "";
+  wwKommentarFeld.value = "";
+  renderWarenwirtschaft();
+}
+
+async function abschreibungErfassenHandler() {
+  wwAbschFehler.textContent = "";
+  const produktId = wwAbschProduktAuswahl.value;
+  const menge = parseInt(wwAbschMengeFeld.value, 10);
+  const grund = wwAbschGrundAuswahl.value;
+  if (!produktId) {
+    wwAbschFehler.textContent = "Bitte ein Produkt auswählen.";
+    return;
+  }
+  if (isNaN(menge) || menge <= 0) {
+    wwAbschFehler.textContent = "Bitte eine Menge größer als 0 eingeben.";
+    return;
+  }
+  const benutzer = session.getAktuellerBenutzer();
+  try {
+    await repo.abschreibungErfassen(
+      produktId, menge, grund, wwAbschKommentarFeld.value.trim() || null, benutzer.name
+    );
+  } catch (exc) {
+    wwAbschFehler.textContent = exc.message ?? String(exc);
+    return;
+  }
+  wwAbschMengeFeld.value = "";
+  wwAbschKommentarFeld.value = "";
+  renderWarenwirtschaft();
+}
+
+function inventurOeffnen() {
+  inventurFehler.textContent = "";
+  inventurKommentarFeld.value = "";
+  inventurListe.innerHTML = "";
+  for (const produkt of produkteCache) {
+    const zeile = document.createElement("div");
+    zeile.style.display = "flex";
+    zeile.style.alignItems = "center";
+    zeile.style.gap = "8px";
+    zeile.style.marginBottom = "6px";
+    const label = document.createElement("span");
+    label.style.flex = "1";
+    label.textContent = produkt.name;
+    const feld = document.createElement("input");
+    feld.type = "number";
+    feld.inputMode = "numeric";
+    feld.step = "1";
+    feld.className = "betrag";
+    feld.style.width = "100px";
+    feld.style.margin = "0";
+    feld.placeholder = "unverändert";
+    feld.dataset.produktId = produkt.id;
+    zeile.appendChild(label);
+    zeile.appendChild(feld);
+    inventurListe.appendChild(zeile);
+  }
+  inventurOverlay.classList.remove("versteckt");
+}
+
+function inventurSchliessen() {
+  inventurOverlay.classList.add("versteckt");
+}
+
+async function inventurSpeichern() {
+  inventurFehler.textContent = "";
+  const zaehlungen = {};
+  for (const feld of inventurListe.querySelectorAll("input")) {
+    if (feld.value.trim() === "") continue;
+    const wert = parseInt(feld.value, 10);
+    if (isNaN(wert)) continue;
+    zaehlungen[feld.dataset.produktId] = wert;
+  }
+  if (!Object.keys(zaehlungen).length) {
+    inventurFehler.textContent = "Bitte mindestens ein Produkt zählen.";
+    return;
+  }
+  const benutzer = session.getAktuellerBenutzer();
+  let ergebnis;
+  try {
+    ergebnis = await repo.inventurDurchfuehren(zaehlungen, inventurKommentarFeld.value.trim(), benutzer.name);
+  } catch (exc) {
+    inventurFehler.textContent = exc.message ?? String(exc);
+    return;
+  }
+  inventurSchliessen();
+  const abweichungen = ergebnis.filter((e) => e.differenz !== 0);
+  zeigeHinweis(
+    "Inventur gespeichert",
+    abweichungen.length
+      ? `${abweichungen.length} Produkt(e) mit Abweichung wurden korrigiert.`
+      : "Keine Abweichungen gefunden – alle gezählten Bestände stimmten bereits."
+  );
+  renderWarenwirtschaft();
+}
+
+// ---------------------------------------------------------------------
+// Auswertung / Monatsabrechnung (Runde 43) - Pendant zu
+// repository.auswertung_je_kasse/monatsabrechnung. Nur fuer
+// Administratoren sichtbar (siehe nachAnmeldungAnzeigen).
+// ---------------------------------------------------------------------
+
+async function renderAuswertung() {
+  const kennzahlen = await repo.auswertungJeKasse();
+  auKasseKennzahlen.innerHTML = "";
+  for (const kasse of VERANSTALTUNGEN) {
+    const k = kennzahlen[kasse];
+    const karte = document.createElement("div");
+    karte.className = "karte";
+    karte.innerHTML = `
+      <h2 style="margin-top:0; color:var(--blau-dunkel);">${KASSE_LABEL[kasse] ?? kasse}</h2>
+      <div class="kennzahl-zeile"><span>Umsatz (brutto)</span><span>${euro(k.erloes)}</span></div>
+      <div class="kennzahl-zeile"><span>MwSt. 7 %</span><span>${euro(k.mwst_7)}</span></div>
+      <div class="kennzahl-zeile"><span>MwSt. 19 %</span><span>${euro(k.mwst_19)}</span></div>
+      <div class="kennzahl-zeile"><span>Offenes Pfand</span><span>${euro(k.pfand)}</span></div>
+      <div class="kennzahl-zeile gesamt"><span>Gewinn</span><span>${euro(k.gewinn)}</span></div>
+    `;
+    auKasseKennzahlen.appendChild(karte);
+  }
+
+  if (!auMonatMonatAuswahl.options.length) {
+    for (let m = 1; m <= 12; m++) {
+      const option = document.createElement("option");
+      option.value = String(m);
+      option.textContent = String(m).padStart(2, "0");
+      auMonatMonatAuswahl.appendChild(option);
+    }
+    const heute = new Date();
+    auMonatJahrFeld.value = String(heute.getFullYear());
+    auMonatMonatAuswahl.value = String(heute.getMonth() + 1);
+  }
+
+  await renderPfandGewinnVerbuchungen();
+}
+
+async function renderPfandGewinnVerbuchungen() {
+  const alle = await repo.letztePfandGewinnVerbuchungen(50);
+  const stornierteIds = new Set(alle.filter((v) => v.storno_von).map((v) => v.storno_von));
+  auPfandTabelleBody.innerHTML = "";
+  for (const verbuchung of alle) {
+    const tr = document.createElement("tr");
+    let status = "Aktiv";
+    if (verbuchung.storno_von) status = "Storno";
+    else if (stornierteIds.has(verbuchung.id)) status = "Storniert";
+    if (status !== "Aktiv") tr.classList.add("storniert");
+
+    for (const wert of [
+      formatDatumUhrzeit(verbuchung.datum),
+      KASSE_LABEL[verbuchung.veranstaltung] ?? verbuchung.veranstaltung,
+      euro(verbuchung.betrag, true),
+      verbuchung.kommentar || "–",
+      status,
+    ]) {
+      const td = document.createElement("td");
+      td.textContent = wert;
+      tr.appendChild(td);
+    }
+
+    const tdAktion = document.createElement("td");
+    if (status === "Aktiv") {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "btn";
+      btn.textContent = "Stornieren";
+      btn.onclick = async () => {
+        const ok = await zeigeBestaetigung(
+          "Verbuchung stornieren?",
+          `Die Pfand-Gewinn-Verbuchung über ${euro(verbuchung.betrag)} wird storniert.`,
+          "Stornieren"
+        );
+        if (!ok) return;
+        const benutzer = session.getAktuellerBenutzer();
+        try {
+          await repo.pfandGewinnStornieren(verbuchung.id, benutzer.name);
+        } catch (exc) {
+          zeigeHinweis("Fehler beim Stornieren", exc.message ?? String(exc));
+          return;
+        }
+        renderAuswertung();
+      };
+      tdAktion.appendChild(btn);
+    }
+    tr.appendChild(tdAktion);
+    auPfandTabelleBody.appendChild(tr);
+  }
+}
+
+async function pfandVerbuchen() {
+  auPfandFehler.textContent = "";
+  const betrag = parseFloat(auPfandBetragFeld.value);
+  if (isNaN(betrag) || betrag <= 0) {
+    auPfandFehler.textContent = "Bitte einen gültigen Betrag größer als 0 eingeben.";
+    return;
+  }
+  const benutzer = session.getAktuellerBenutzer();
+  try {
+    await repo.pfandGewinnVerbuchen(
+      auPfandKasseAuswahl.value, betrag, auPfandKommentarFeld.value.trim(), benutzer.name
+    );
+  } catch (exc) {
+    auPfandFehler.textContent = exc.message ?? String(exc);
+    return;
+  }
+  auPfandBetragFeld.value = "";
+  auPfandKommentarFeld.value = "";
+  renderAuswertung();
+}
+
+async function monatsabrechnungAnzeigen() {
+  const jahr = parseInt(auMonatJahrFeld.value, 10);
+  const monat = parseInt(auMonatMonatAuswahl.value, 10);
+  if (isNaN(jahr) || isNaN(monat)) return;
+  letzteMonatsabrechnung = await repo.monatsabrechnung(jahr, monat);
+  auMonatTitel.textContent = `${String(monat).padStart(2, "0")}/${jahr}`;
+  auMonatErgebnis.innerHTML = monatsabrechnungHtml(letzteMonatsabrechnung);
+  auMonatErgebnisKarte.style.display = "";
+}
+
+function monatsabrechnungHtml(m) {
+  const jeKasseZeilen = VERANSTALTUNGEN.map((v) => {
+    const k = m.je_kasse[v];
+    return `<tr><td>${KASSE_LABEL[v] ?? v}</td><td>${euro(k.erloes)}</td><td>${euro(k.mwst_7)}</td><td>${euro(k.mwst_19)}</td><td>${euro(k.gewinn)}</td><td>${euro(k.pfand)}</td></tr>`;
+  }).join("");
+
+  const verkaeufeZeilen =
+    m.verkaeufe_je_produkt
+      .map(
+        (v) =>
+          `<tr><td>${KASSE_LABEL[v.veranstaltung] ?? v.veranstaltung}</td><td>${v.produkt_name}</td><td>${v.anzahl}</td><td>${euro(v.betrag)}</td></tr>`
+      )
+      .join("") || `<tr><td colspan="4">Keine Verkäufe in diesem Monat.</td></tr>`;
+
+  const wareneinkaufZeilen =
+    m.wareneinkauf
+      .map(
+        (w) =>
+          `<tr><td>${w.name}${w.geschaetzt ? " (geschätzt)" : ""}</td><td>${w.menge}</td><td>${euro(w.netto)}</td><td>${euro(w.mwst)}</td><td>${euro(w.brutto)}</td></tr>`
+      )
+      .join("") || `<tr><td colspan="5">Kein Wareneinkauf in diesem Monat.</td></tr>`;
+
+  const abschreibungZeilen =
+    m.abschreibungen
+      .map((a) => `<tr><td>${a.name}</td><td>${a.grund}</td><td>${a.menge}</td><td>${euro(a.wert)}</td></tr>`)
+      .join("") || `<tr><td colspan="4">Keine Abschreibungen in diesem Monat.</td></tr>`;
+
+  return `
+    <h2>Je Kasse</h2>
+    <table><thead><tr><th>Kasse</th><th>Umsatz</th><th>MwSt. 7%</th><th>MwSt. 19%</th><th>Gewinn</th><th>Offenes Pfand</th></tr></thead><tbody>${jeKasseZeilen}</tbody></table>
+    <div class="kennzahl-zeile"><span>Gesamt-Umsatz</span><span>${euro(m.gesamt_erloes)}</span></div>
+    <div class="kennzahl-zeile"><span>Gesamt-Gewinn</span><span>${euro(m.gesamt_gewinn)}</span></div>
+    <div class="kennzahl-zeile"><span>Schiedsrichter-Auszahlungen</span><span>${euro(m.gesamt_schiedsrichter)}</span></div>
+    <div class="kennzahl-zeile"><span>Ergebnis nach Schiedsrichtern</span><span>${euro(m.gesamt_ergebnis_nach_schiedsrichter)}</span></div>
+    <div class="kennzahl-zeile"><span>Sonstige Ausgaben</span><span>${euro(m.gesamt_sonstige_ausgaben)}</span></div>
+    <div class="kennzahl-zeile gesamt"><span>Ergebnis nach Ausgaben</span><span>${euro(m.gesamt_ergebnis_nach_ausgaben)}</span></div>
+    <div class="kennzahl-zeile"><span>Umsatzsteuer</span><span>${euro(m.gesamt_umsatzsteuer)}</span></div>
+    <div class="kennzahl-zeile"><span>Vorsteuer (Wareneinkauf)</span><span>${euro(m.gesamt_vorsteuer)}</span></div>
+    <div class="kennzahl-zeile"><span>MwSt.-Zahllast</span><span>${euro(m.mwst_zahllast)}</span></div>
+    <div class="kennzahl-zeile"><span>Lieferanten-Pfand (Saldo)</span><span>${euro(m.lieferanten_pfand.saldo)}</span></div>
+    <div class="kennzahl-zeile"><span>Abschreibungen (Wert)</span><span>${euro(m.gesamt_abschreibungen_wert)}</span></div>
+
+    <h2>Verkäufe je Produkt</h2>
+    <table><thead><tr><th>Kasse</th><th>Produkt</th><th>Anzahl</th><th>Erlös</th></tr></thead><tbody>${verkaeufeZeilen}</tbody></table>
+
+    <h2>Wareneinkauf</h2>
+    ${m.wareneinkauf_teilweise_geschaetzt ? '<p class="hinweis">„geschätzt“ = kein Einzelpreis erfasst, es wurde der aktuelle Einkaufspreis des Produkts verwendet.</p>' : ""}
+    <table><thead><tr><th>Produkt</th><th>Menge</th><th>Netto</th><th>MwSt.</th><th>Brutto</th></tr></thead><tbody>${wareneinkaufZeilen}</tbody></table>
+
+    <h2>Abschreibungen</h2>
+    <table><thead><tr><th>Produkt</th><th>Grund</th><th>Menge</th><th>Wert</th></tr></thead><tbody>${abschreibungZeilen}</tbody></table>
+  `;
+}
+
+function monatsabrechnungDrucken() {
+  if (!letzteMonatsabrechnung) return;
+  const titel = `Monatsabrechnung ${auMonatTitel.textContent}`;
+  druckenOeffnen(titel, `<h1>SG Köln-Worringen – ${titel}</h1>${monatsabrechnungHtml(letzteMonatsabrechnung)}`);
+}
+
+// ---------------------------------------------------------------------
+// Admin-Verwaltung: Produkte/Benutzer (Runde 43) - Pendant zu
+// repository.produkt_*/benutzer_*. Nur fuer Administratoren sichtbar
+// (siehe nachAnmeldungAnzeigen). Rein UI-seitig geschuetzt, nicht per
+// Datenbank-Regel - wie am Rechner (siehe repo.js).
+// ---------------------------------------------------------------------
+
+function adminSubtabUmschalten(tab) {
+  adminSubtab = tab;
+  adSubtabProdukteBtn.classList.toggle("aktiv", tab === "produkte");
+  adSubtabBenutzerBtn.classList.toggle("aktiv", tab === "benutzer");
+  adProduktePanel.style.display = tab === "produkte" ? "" : "none";
+  adBenutzerPanel.style.display = tab === "benutzer" ? "" : "none";
+}
+
+async function renderAdmin() {
+  await renderAdminProdukte();
+  await renderAdminBenutzer();
+}
+
+async function renderAdminProdukte() {
+  const alle = await repo.listeProdukte(false);
+  adPTabelleBody.innerHTML = "";
+  for (const produkt of alle) {
+    const tr = document.createElement("tr");
+    if (!produkt.aktiv) tr.classList.add("storniert");
+    for (const wert of [
+      produkt.name,
+      KATEGORIE_LABEL[produkt.kategorie] ?? produkt.kategorie,
+      `${produkt.mwst_satz} %`,
+      euro(produkt.einkaufspreis),
+      euro(produkt.verkaufspreis),
+      euro(produkt.helferpreis),
+      euro(produkt.pfand_betrag),
+      produkt.aktiv ? "Aktiv" : "Deaktiviert",
+    ]) {
+      const td = document.createElement("td");
+      td.textContent = wert;
+      tr.appendChild(td);
+    }
+
+    const tdAktionen = document.createElement("td");
+    tdAktionen.style.whiteSpace = "nowrap";
+    const bearbeitenBtn = document.createElement("button");
+    bearbeitenBtn.type = "button";
+    bearbeitenBtn.className = "btn";
+    bearbeitenBtn.textContent = "Bearbeiten";
+    bearbeitenBtn.style.marginRight = "6px";
+    bearbeitenBtn.onclick = () => produktBearbeitenOeffnen(produkt);
+    tdAktionen.appendChild(bearbeitenBtn);
+    if (produkt.aktiv) {
+      const deaktivierenBtn = document.createElement("button");
+      deaktivierenBtn.type = "button";
+      deaktivierenBtn.className = "btn";
+      deaktivierenBtn.textContent = "Deaktivieren";
+      deaktivierenBtn.onclick = async () => {
+        const ok = await zeigeBestaetigung(
+          "Produkt deaktivieren?",
+          `„${produkt.name}“ wird deaktiviert und ist danach nicht mehr im Verkauf wählbar. Bereits gebuchte Verkäufe/Bewegungen bleiben unverändert.`,
+          "Deaktivieren"
+        );
+        if (!ok) return;
+        try {
+          await repo.produktDeaktivieren(produkt.id);
+        } catch (exc) {
+          zeigeHinweis("Fehler", exc.message ?? String(exc));
+          return;
+        }
+        syncJetzt();
+        await ladeCaches();
+        renderAdminProdukte();
+      };
+      tdAktionen.appendChild(deaktivierenBtn);
+    }
+    tr.appendChild(tdAktionen);
+    adPTabelleBody.appendChild(tr);
+  }
+}
+
+async function produktAnlegenHandler() {
+  adPFehler.textContent = "";
+  const name = adPNameFeld.value.trim();
+  if (!name) {
+    adPFehler.textContent = "Bitte einen Namen eingeben.";
+    return;
+  }
+  const verkaufspreis = parseFloat(adPVerkaufFeld.value);
+  if (isNaN(verkaufspreis) || verkaufspreis < 0) {
+    adPFehler.textContent = "Bitte einen gültigen Verkaufspreis eingeben.";
+    return;
+  }
+  const einkaufspreis = parseFloat(adPEinkaufFeld.value) || 0;
+  const helferpreisWert = adPHelferpreisFeld.value.trim();
+  const helferpreis = helferpreisWert === "" ? null : parseFloat(helferpreisWert);
+  const pfandBetrag = parseFloat(adPPfandFeld.value) || 0;
+  const benutzer = session.getAktuellerBenutzer();
+  try {
+    await repo.produktAnlegen(
+      name,
+      adPKategorieAuswahl.value,
+      parseInt(adPMwstAuswahl.value, 10),
+      einkaufspreis,
+      verkaufspreis,
+      helferpreis,
+      pfandBetrag,
+      benutzer.name
+    );
+  } catch (exc) {
+    adPFehler.textContent = exc.message ?? String(exc);
+    return;
+  }
+  adPNameFeld.value = "";
+  adPEinkaufFeld.value = "";
+  adPVerkaufFeld.value = "";
+  adPHelferpreisFeld.value = "";
+  adPPfandFeld.value = "";
+  syncJetzt();
+  await ladeCaches();
+  renderAdminProdukte();
+}
+
+function produktBearbeitenOeffnen(produkt) {
+  bearbeitenProduktId = produkt.id;
+  pbFehler.textContent = "";
+  pbNameFeld.value = produkt.name;
+  pbKategorieAuswahl.value = produkt.kategorie;
+  pbMwstAuswahl.value = String(produkt.mwst_satz);
+  pbEinkaufFeld.value = produkt.einkaufspreis;
+  pbVerkaufFeld.value = produkt.verkaufspreis;
+  pbHelferpreisFeld.value = produkt.helferpreis;
+  pbPfandFeld.value = produkt.pfand_betrag;
+  produktBearbeitenOverlay.classList.remove("versteckt");
+}
+
+function produktBearbeitenSchliessen() {
+  produktBearbeitenOverlay.classList.add("versteckt");
+  bearbeitenProduktId = null;
+}
+
+async function produktBearbeitenSpeichern() {
+  if (!bearbeitenProduktId) return;
+  pbFehler.textContent = "";
+  const name = pbNameFeld.value.trim();
+  if (!name) {
+    pbFehler.textContent = "Bitte einen Namen eingeben.";
+    return;
+  }
+  const verkaufspreis = parseFloat(pbVerkaufFeld.value);
+  if (isNaN(verkaufspreis) || verkaufspreis < 0) {
+    pbFehler.textContent = "Bitte einen gültigen Verkaufspreis eingeben.";
+    return;
+  }
+  const einkaufspreis = parseFloat(pbEinkaufFeld.value) || 0;
+  const helferpreisWert = pbHelferpreisFeld.value.trim();
+  const helferpreis = helferpreisWert === "" ? null : parseFloat(helferpreisWert);
+  const pfandBetrag = parseFloat(pbPfandFeld.value) || 0;
+  try {
+    await repo.produktAktualisieren(
+      bearbeitenProduktId,
+      name,
+      pbKategorieAuswahl.value,
+      parseInt(pbMwstAuswahl.value, 10),
+      einkaufspreis,
+      verkaufspreis,
+      helferpreis,
+      pfandBetrag
+    );
+  } catch (exc) {
+    pbFehler.textContent = exc.message ?? String(exc);
+    return;
+  }
+  produktBearbeitenSchliessen();
+  syncJetzt();
+  await ladeCaches();
+  renderAdminProdukte();
+  if (aktuelleAnsicht === "verkauf") renderProduktGrid();
+}
+
+async function renderAdminBenutzer() {
+  const alle = await repo.listeBenutzer(false);
+  adBTabelleBody.innerHTML = "";
+  for (const benutzer of alle) {
+    const tr = document.createElement("tr");
+    if (!benutzer.aktiv) tr.classList.add("storniert");
+    for (const wert of [benutzer.name, benutzer.ist_admin ? "Ja" : "Nein", benutzer.aktiv ? "Aktiv" : "Deaktiviert"]) {
+      const td = document.createElement("td");
+      td.textContent = wert;
+      tr.appendChild(td);
+    }
+
+    const tdAktionen = document.createElement("td");
+    tdAktionen.style.whiteSpace = "nowrap";
+
+    const bearbeitenBtn = document.createElement("button");
+    bearbeitenBtn.type = "button";
+    bearbeitenBtn.className = "btn";
+    bearbeitenBtn.textContent = "Bearbeiten";
+    bearbeitenBtn.style.marginRight = "6px";
+    bearbeitenBtn.onclick = () => benutzerBearbeitenOeffnen(benutzer);
+    tdAktionen.appendChild(bearbeitenBtn);
+
+    const pinBtn = document.createElement("button");
+    pinBtn.type = "button";
+    pinBtn.className = "btn";
+    pinBtn.textContent = "PIN setzen";
+    pinBtn.style.marginRight = "6px";
+    pinBtn.onclick = async () => {
+      const neuerPin = await zeigeTextEingabe(
+        "Neuen PIN setzen",
+        `Neuer PIN für „${benutzer.name}“ (4–8 Ziffern):`
+      );
+      if (neuerPin === null) return;
+      const pinTrim = neuerPin.trim();
+      if (!/^\d{4,8}$/.test(pinTrim)) {
+        zeigeHinweis("Ungültiger PIN", "Der PIN muss aus 4 bis 8 Ziffern bestehen.");
+        return;
+      }
+      try {
+        await repo.benutzerPinSetzen(benutzer.id, pinTrim);
+      } catch (exc) {
+        zeigeHinweis("Fehler", exc.message ?? String(exc));
+        return;
+      }
+      syncJetzt();
+      zeigeHinweis("PIN gesetzt", `Der PIN für „${benutzer.name}“ wurde geändert.`);
+    };
+    tdAktionen.appendChild(pinBtn);
+
+    if (benutzer.aktiv) {
+      const deaktivierenBtn = document.createElement("button");
+      deaktivierenBtn.type = "button";
+      deaktivierenBtn.className = "btn";
+      deaktivierenBtn.textContent = "Deaktivieren";
+      deaktivierenBtn.onclick = async () => {
+        if (benutzer.ist_admin && (await repo.anzahlAktiveAdmins(benutzer.id)) === 0) {
+          zeigeHinweis(
+            "Nicht möglich",
+            "Es muss mindestens ein aktiver Administrator bestehen bleiben – bitte zuerst einen weiteren Administrator anlegen oder festlegen."
+          );
+          return;
+        }
+        const ok = await zeigeBestaetigung(
+          "Benutzer deaktivieren?",
+          `„${benutzer.name}“ kann sich danach nicht mehr anmelden.`,
+          "Deaktivieren"
+        );
+        if (!ok) return;
+        try {
+          await repo.benutzerDeaktivieren(benutzer.id);
+        } catch (exc) {
+          zeigeHinweis("Fehler", exc.message ?? String(exc));
+          return;
+        }
+        syncJetzt();
+        await ladeCaches();
+        renderAdminBenutzer();
+      };
+      tdAktionen.appendChild(deaktivierenBtn);
+    } else {
+      const aktivierenBtn = document.createElement("button");
+      aktivierenBtn.type = "button";
+      aktivierenBtn.className = "btn";
+      aktivierenBtn.textContent = "Aktivieren";
+      aktivierenBtn.onclick = async () => {
+        try {
+          await repo.benutzerAktivieren(benutzer.id);
+        } catch (exc) {
+          zeigeHinweis("Fehler", exc.message ?? String(exc));
+          return;
+        }
+        syncJetzt();
+        await ladeCaches();
+        renderAdminBenutzer();
+      };
+      tdAktionen.appendChild(aktivierenBtn);
+    }
+    tr.appendChild(tdAktionen);
+    adBTabelleBody.appendChild(tr);
+  }
+}
+
+async function benutzerAnlegenHandler() {
+  adBFehler.textContent = "";
+  const name = adBNameFeld.value.trim();
+  if (!name) {
+    adBFehler.textContent = "Bitte einen Namen eingeben.";
+    return;
+  }
+  const pin = adBPinFeld.value.trim();
+  if (!/^\d{4,8}$/.test(pin)) {
+    adBFehler.textContent = "Der PIN muss aus 4 bis 8 Ziffern bestehen.";
+    return;
+  }
+  try {
+    await repo.benutzerAnlegen(name, pin, adBAdminCheckbox.checked);
+  } catch (exc) {
+    adBFehler.textContent = exc.message ?? String(exc);
+    return;
+  }
+  adBNameFeld.value = "";
+  adBPinFeld.value = "";
+  adBAdminCheckbox.checked = false;
+  syncJetzt();
+  await ladeCaches();
+  renderAdminBenutzer();
+}
+
+function benutzerBearbeitenOeffnen(benutzer) {
+  bearbeitenBenutzerId = benutzer.id;
+  bearbeitenBenutzerWarAdmin = !!benutzer.ist_admin;
+  bbFehler.textContent = "";
+  bbNameFeld.value = benutzer.name;
+  bbAdminCheckbox.checked = !!benutzer.ist_admin;
+  benutzerBearbeitenOverlay.classList.remove("versteckt");
+}
+
+function benutzerBearbeitenSchliessen() {
+  benutzerBearbeitenOverlay.classList.add("versteckt");
+  bearbeitenBenutzerId = null;
+}
+
+async function benutzerBearbeitenSpeichern() {
+  if (!bearbeitenBenutzerId) return;
+  bbFehler.textContent = "";
+  const name = bbNameFeld.value.trim();
+  if (!name) {
+    bbFehler.textContent = "Bitte einen Namen eingeben.";
+    return;
+  }
+  if (bearbeitenBenutzerWarAdmin && !bbAdminCheckbox.checked) {
+    if ((await repo.anzahlAktiveAdmins(bearbeitenBenutzerId)) === 0) {
+      bbFehler.textContent = "Es muss mindestens ein aktiver Administrator bestehen bleiben.";
+      return;
+    }
+  }
+  try {
+    await repo.benutzerAktualisieren(bearbeitenBenutzerId, name, bbAdminCheckbox.checked);
+  } catch (exc) {
+    bbFehler.textContent = exc.message ?? String(exc);
+    return;
+  }
+  benutzerBearbeitenSchliessen();
+  syncJetzt();
+  await ladeCaches();
+  renderAdminBenutzer();
+}
+
+// ---------------------------------------------------------------------
 // Caches laden / nach Sync aktualisieren
 // ---------------------------------------------------------------------
 
@@ -2025,6 +3027,12 @@ async function nachSyncAktualisieren() {
     renderTermine();
   } else if (aktuelleAnsicht === "feedback") {
     renderFeedback();
+  } else if (aktuelleAnsicht === "warenwirtschaft") {
+    renderWarenwirtschaft();
+  } else if (aktuelleAnsicht === "auswertung") {
+    renderAuswertung();
+  } else if (aktuelleAnsicht === "admin") {
+    renderAdmin();
   }
   pruefeKassenvorschlag();
 }
@@ -2133,14 +3141,16 @@ function wireEvents() {
   tabStorno.onclick = () => zeigeHauptView("storno");
   tabKassensturz.onclick = () => zeigeHauptView("kassensturz");
   tabMehr.onclick = () => {
-    // Nicht-Administratoren duerfen "nachbestellung" nicht sehen - falls
-    // das (aus einer vorherigen Admin-Anmeldung in derselben Sitzung) die
-    // zuletzt gewaehlte Unteransicht war, stattdessen die erste sichtbare
-    // Unteransicht oeffnen. "schiedsrichter" ist seit Runde 34 kein Teil
-    // von "Mehr" mehr, daher hier nicht mehr als Ziel moeglich.
+    // Nicht-Administratoren duerfen "nachbestellung"/"auswertung"/"admin"
+    // nicht sehen - falls das (aus einer vorherigen Admin-Anmeldung in
+    // derselben Sitzung) die zuletzt gewaehlte Unteransicht war,
+    // stattdessen die erste sichtbare Unteransicht oeffnen.
+    // "schiedsrichter" ist seit Runde 34 kein Teil von "Mehr" mehr, daher
+    // hier nicht mehr als Ziel moeglich.
     const benutzer = session.getAktuellerBenutzer();
+    const nurAdmin = ["nachbestellung", "auswertung", "admin"];
     let ziel = letzteMehrAnsicht || "einzahlen";
-    if (ziel === "nachbestellung" && !benutzer?.ist_admin) ziel = "einzahlen";
+    if (nurAdmin.includes(ziel) && !benutzer?.ist_admin) ziel = "einzahlen";
     zeigeHauptView(ziel);
   };
   tabSchiedsrichter.onclick = () => zeigeHauptView("schiedsrichter");
@@ -2150,6 +3160,9 @@ function wireEvents() {
   tabNachbestellung.onclick = () => zeigeHauptView("nachbestellung");
   tabTermine.onclick = () => zeigeHauptView("termine");
   tabFeedback.onclick = () => zeigeHauptView("feedback");
+  tabWarenwirtschaft.onclick = () => zeigeHauptView("warenwirtschaft");
+  tabAuswertung.onclick = () => zeigeHauptView("auswertung");
+  tabAdmin.onclick = () => zeigeHauptView("admin");
   srAuszahlenBtn.onclick = schiedsrichterAuszahlen;
   srWasserStillBtn.onclick = () => schiedsrichterWasserAusgeben(SCHIEDSRICHTER_WASSER_STILL_PRODUKT_ID);
   srWasserMediumBtn.onclick = () => schiedsrichterWasserAusgeben(SCHIEDSRICHTER_WASSER_MEDIUM_PRODUKT_ID);
@@ -2188,6 +3201,35 @@ function wireEvents() {
   ksGezaehltFeld.oninput = ksGezaehltGeaendert;
   ksSpeichernBtn.onclick = ksSpeichern;
 
+  // Runde 43: Warenwirtschaft
+  wwInventurBtn.onclick = inventurOeffnen;
+  wwBestandDruckenBtn.onclick = bestandDrucken;
+  wwModusEingangBtn.onclick = () => wwModusUmschalten("Wareneingang");
+  wwModusKorrekturBtn.onclick = () => wwModusUmschalten("Korrektur");
+  wwErfassenBtn.onclick = wareneingangErfassen;
+  wwAbschErfassenBtn.onclick = abschreibungErfassenHandler;
+  inventurAbbrechenBtn.onclick = inventurSchliessen;
+  inventurSpeichernBtn.onclick = inventurSpeichern;
+
+  // Runde 43: Auswertung / Monatsabrechnung
+  auPfandVerbuchenBtn.onclick = pfandVerbuchen;
+  auMonatAnzeigenBtn.onclick = monatsabrechnungAnzeigen;
+  auMonatDruckenBtn.onclick = monatsabrechnungDrucken;
+
+  // Runde 43: Admin-Verwaltung
+  adSubtabProdukteBtn.onclick = () => adminSubtabUmschalten("produkte");
+  adSubtabBenutzerBtn.onclick = () => adminSubtabUmschalten("benutzer");
+  adPKategorieAuswahl.onchange = () => {
+    const vorschlag = MWST_SAETZE[adPKategorieAuswahl.value];
+    if (vorschlag != null) adPMwstAuswahl.value = String(vorschlag);
+  };
+  adPAnlegenBtn.onclick = produktAnlegenHandler;
+  adBAnlegenBtn.onclick = benutzerAnlegenHandler;
+  pbAbbrechenBtn.onclick = produktBearbeitenSchliessen;
+  pbSpeichernBtn.onclick = produktBearbeitenSpeichern;
+  bbAbbrechenBtn.onclick = benutzerBearbeitenSchliessen;
+  bbSpeichernBtn.onclick = benutzerBearbeitenSpeichern;
+
   hinweisOverlay.addEventListener("click", (ev) => {
     if (ev.target === hinweisOverlay) hinweisSchliessen();
   });
@@ -2199,6 +3241,15 @@ function wireEvents() {
   });
   feedbackStatusOverlay.addEventListener("click", (ev) => {
     if (ev.target === feedbackStatusOverlay) feedbackStatusSchliessen();
+  });
+  inventurOverlay.addEventListener("click", (ev) => {
+    if (ev.target === inventurOverlay) inventurSchliessen();
+  });
+  produktBearbeitenOverlay.addEventListener("click", (ev) => {
+    if (ev.target === produktBearbeitenOverlay) produktBearbeitenSchliessen();
+  });
+  benutzerBearbeitenOverlay.addEventListener("click", (ev) => {
+    if (ev.target === benutzerBearbeitenOverlay) benutzerBearbeitenSchliessen();
   });
 }
 

@@ -1,26 +1,33 @@
-// Geschaeftslogik der Tablet-Kasse - Pendant zu kiosk/repository.py,
-// beschraenkt auf das, was auf dem Tablet gebraucht wird: Verkauf +
-// automatischer Warenausgang, Storno, Kassensturz sowie
-// Schiedsrichter-Auszahlungen und Bargeld-Einzahlungen (je erfassen +
-// stornieren). Produktverwaltung, Benutzerverwaltung, uebrige
-// Warenwirtschaft (Wareneingang/Korrektur/Inventur/Beleg-Scan),
-// Auswertung/Monatsabrechnung und Drucken bleiben bewusst der Windows-App
-// vorbehalten - hier werden die dafuer noetigen Tabellen nur mitgelesen
-// (siehe sync.js).
+// Geschaeftslogik der Tablet-Kasse - Pendant zu kiosk/repository.py.
+// Seit Runde 43 deckt das Tablet denselben Funktionsumfang wie die
+// Windows-App ab: Verkauf + automatischer Warenausgang, Storno,
+// Kassensturz, Schiedsrichter-Auszahlungen, Bargeld-Einzahlungen, die
+// uebrige Warenwirtschaft (Wareneingang/Korrektur/Inventur/Abschreibungen/
+// Beleg-Foto), Produktverwaltung, Benutzerverwaltung sowie Auswertung/
+// Monatsabrechnung (Drucken laeuft auf dem Tablet ueber den Browser-Druck
+// statt Qt, siehe main.js druckenOeffnen()). Vorher waren diese Bereiche
+// bewusst der Windows-App vorbehalten (siehe Projekt-Status-Dokument,
+// Runde 43 - "Tablet um Windows-Funktionen erweitern").
 //
 // Wie am Rechner sind Kassiervorgaenge, Positionen, Lagerbewegungen,
 // Kassenstuerze, Schiedsrichter-Auszahlungen und Bargeld-Einzahlungen
 // unveraenderliche Ereignisse: sie werden nur angelegt, nie nachtraeglich
 // veraendert oder geloescht. Ein Storno legt einen neuen, gegenlaeufigen
-// Vorgang an statt den Original-Vorgang zu veraendern.
+// Vorgang an statt den Original-Vorgang zu veraendern. Produkte/Benutzer
+// sind (wie am Rechner) per Audit-Trail-Prinzip nie hart loeschbar, nur
+// deaktivierbar (Benutzer zusaetzlich wieder aktivierbar).
 
 import { getAll, get, put, geraetId, jetzt, neueId } from "./db.js";
-import { GERAET_NAME, PFAND_RUECKGABE_PRODUKT_ID, VERANSTALTUNGEN } from "./config.js";
-import { rund2 } from "./format.js";
-import { pinPruefen } from "./auth.js";
+import { GERAET_NAME, PFAND_RUECKGABE_PRODUKT_ID, VERANSTALTUNGEN, MWST_SAETZE } from "./config.js";
+import { rund2, mwstBetrag } from "./format.js";
+import { pinPruefen, pinHashen } from "./auth.js";
 
 // ---------------------------------------------------------------------
-// Produkte / Benutzer (reine Lesekopien, siehe sync.js)
+// Produkte - seit Runde 43 auch auf dem Tablet verwaltbar (Pendant zu
+// repository.produkt_anlegen/produkt_aktualisieren/produkt_deaktivieren).
+// Wie am Rechner: nie hart loeschen, nur deaktivieren (Audit-Trail-
+// Prinzip) - dafuer gibt es bewusst KEINE produktAktivieren()-Funktion,
+// analog zur Windows-App.
 // ---------------------------------------------------------------------
 
 export async function listeProdukte(nurAktive = true) {
@@ -36,10 +43,85 @@ export async function pfandPauschalProdukt() {
   return get("produkte", PFAND_RUECKGABE_PRODUKT_ID);
 }
 
+export async function produktAnlegen(
+  name, kategorie, mwstSatz, einkaufspreis, verkaufspreis, helferpreis, pfandBetrag, benutzerName
+) {
+  const id = neueId();
+  const gid = await geraetId();
+  await put("produkte", {
+    id,
+    name: (name || "").trim(),
+    kategorie,
+    mwst_satz: mwstSatz,
+    einkaufspreis: rund2(einkaufspreis || 0),
+    verkaufspreis: rund2(verkaufspreis || 0),
+    helferpreis: helferpreis == null ? rund2(verkaufspreis || 0) : rund2(helferpreis),
+    pfand_betrag: rund2(pfandBetrag || 0),
+    aktiv: true,
+    aktualisiert_am: jetzt(),
+    geraet_id: gid,
+    synced: false,
+    synced_at: null,
+  });
+  return id;
+}
+
+export async function produktAktualisieren(
+  produktId, name, kategorie, mwstSatz, einkaufspreis, verkaufspreis, helferpreis, pfandBetrag
+) {
+  const produkt = await get("produkte", produktId);
+  if (!produkt) throw new Error("Produkt nicht gefunden.");
+  const gid = await geraetId();
+  await put("produkte", {
+    ...produkt,
+    name: (name || "").trim(),
+    kategorie,
+    mwst_satz: mwstSatz,
+    einkaufspreis: rund2(einkaufspreis || 0),
+    verkaufspreis: rund2(verkaufspreis || 0),
+    helferpreis: helferpreis == null ? rund2(verkaufspreis || 0) : rund2(helferpreis),
+    pfand_betrag: rund2(pfandBetrag || 0),
+    aktualisiert_am: jetzt(),
+    geraet_id: gid,
+    synced: false,
+    synced_at: null,
+  });
+}
+
+export async function produktDeaktivieren(produktId) {
+  const produkt = await get("produkte", produktId);
+  if (!produkt) throw new Error("Produkt nicht gefunden.");
+  const gid = await geraetId();
+  await put("produkte", {
+    ...produkt,
+    aktiv: false,
+    aktualisiert_am: jetzt(),
+    geraet_id: gid,
+    synced: false,
+    synced_at: null,
+  });
+}
+
+export { MWST_SAETZE };
+
+// ---------------------------------------------------------------------
+// Benutzer - seit Runde 43 auch auf dem Tablet verwaltbar (Pendant zu
+// repository.benutzer_anlegen/benutzer_aktualisieren/benutzer_pin_setzen/
+// benutzer_deaktivieren/benutzer_aktivieren). Die Regel "mindestens ein
+// aktiver Administrator" wird - wie am Rechner - NICHT hier im Backend
+// erzwungen, sondern in main.js vor dem Aufruf geprueft (siehe
+// anzahlAktiveAdmins unten).
+// ---------------------------------------------------------------------
+
 export async function listeBenutzer(nurAktive = true) {
   const alle = await getAll("benutzer");
   const gefiltert = nurAktive ? alle.filter((b) => b.aktiv) : alle;
   return gefiltert.sort((a, b) => a.name.localeCompare(b.name, "de"));
+}
+
+export async function anzahlAktiveAdmins(ausserId = null) {
+  const alle = await getAll("benutzer");
+  return alle.filter((b) => b.aktiv && b.ist_admin && b.id !== ausserId).length;
 }
 
 export async function benutzerAnmelden(benutzerId, pin) {
@@ -47,6 +129,86 @@ export async function benutzerAnmelden(benutzerId, pin) {
   if (!b || !b.aktiv) return null;
   const ok = await pinPruefen(pin, b.pin_hash, b.pin_salt);
   return ok ? b : null;
+}
+
+export async function benutzerAnlegen(name, pin, istAdmin) {
+  const { hash, salt } = await pinHashen(pin);
+  const id = neueId();
+  const gid = await geraetId();
+  const jetztIso = jetzt();
+  await put("benutzer", {
+    id,
+    name: (name || "").trim(),
+    pin_hash: hash,
+    pin_salt: salt,
+    ist_admin: !!istAdmin,
+    aktiv: true,
+    erstellt_am: jetztIso,
+    aktualisiert_am: jetztIso,
+    geraet_id: gid,
+    synced: false,
+    synced_at: null,
+  });
+  return id;
+}
+
+export async function benutzerAktualisieren(benutzerId, name, istAdmin) {
+  const benutzer = await get("benutzer", benutzerId);
+  if (!benutzer) throw new Error("Benutzer nicht gefunden.");
+  const gid = await geraetId();
+  await put("benutzer", {
+    ...benutzer,
+    name: (name || "").trim(),
+    ist_admin: !!istAdmin,
+    aktualisiert_am: jetzt(),
+    geraet_id: gid,
+    synced: false,
+    synced_at: null,
+  });
+}
+
+export async function benutzerPinSetzen(benutzerId, neuerPin) {
+  const benutzer = await get("benutzer", benutzerId);
+  if (!benutzer) throw new Error("Benutzer nicht gefunden.");
+  const { hash, salt } = await pinHashen(neuerPin);
+  const gid = await geraetId();
+  await put("benutzer", {
+    ...benutzer,
+    pin_hash: hash,
+    pin_salt: salt,
+    aktualisiert_am: jetzt(),
+    geraet_id: gid,
+    synced: false,
+    synced_at: null,
+  });
+}
+
+export async function benutzerDeaktivieren(benutzerId) {
+  const benutzer = await get("benutzer", benutzerId);
+  if (!benutzer) throw new Error("Benutzer nicht gefunden.");
+  const gid = await geraetId();
+  await put("benutzer", {
+    ...benutzer,
+    aktiv: false,
+    aktualisiert_am: jetzt(),
+    geraet_id: gid,
+    synced: false,
+    synced_at: null,
+  });
+}
+
+export async function benutzerAktivieren(benutzerId) {
+  const benutzer = await get("benutzer", benutzerId);
+  if (!benutzer) throw new Error("Benutzer nicht gefunden.");
+  const gid = await geraetId();
+  await put("benutzer", {
+    ...benutzer,
+    aktiv: true,
+    aktualisiert_am: jetzt(),
+    geraet_id: gid,
+    synced: false,
+    synced_at: null,
+  });
 }
 
 // ---------------------------------------------------------------------
@@ -66,16 +228,21 @@ export async function lagerbewegungErfassen(
   benutzerName,
   gid,
   einzelpreis = null,
-  mwstSatz = null
+  mwstSatz = null,
+  belegPfad = null,
+  istAbschreibung = false,
+  abschreibungGrund = null,
+  stornoVon = null
 ) {
+  const id = neueId();
   await put("lagerbewegungen", {
-    id: neueId(),
+    id,
     produkt_id: produktId,
     typ,
     menge,
     datum: jetzt(),
     kommentar,
-    beleg_pfad: null,
+    beleg_pfad: belegPfad,
     rechner: GERAET_NAME,
     geraet_id: gid,
     synced: false,
@@ -83,7 +250,14 @@ export async function lagerbewegungErfassen(
     einzelpreis,
     mwst_satz: mwstSatz,
     benutzer: benutzerName,
+    // Runde 43: Abschreibungen (siehe kiosk/repository.py, Runde 42) -
+    // ist_abschreibung/abschreibung_grund/storno_von sind bei einer
+    // normalen Buchung immer false/null/null.
+    ist_abschreibung: !!istAbschreibung,
+    abschreibung_grund: abschreibungGrund,
+    storno_von: stornoVon,
   });
+  return id;
 }
 
 // ---------------------------------------------------------------------
@@ -1139,4 +1313,589 @@ export async function feedbackStatusSetzen(feedbackId, status, antwort, benutzer
     synced: false,
     synced_at: null,
   });
+}
+
+// ---------------------------------------------------------------------
+// Warenwirtschaft (Runde 43) - Pendant zu den entsprechenden
+// repository.py-Funktionen (Bestand, Wareneingang/Korrektur, Inventur,
+// Abschreibungen). Der Bestand ist wie am Rechner KEIN eigenes Feld,
+// sondern immer die Summe aller lagerbewegungen.menge je Produkt (reine
+// Ereignisquelle). Der Reiter "Warenwirtschaft" ist wie am Rechner NICHT
+// admin-only - fuer alle angemeldeten Benutzer nutzbar (siehe
+// _admin_sichtbarkeit_anwenden-Aequivalent in main.js, das nur Admin/
+// Auswertung/Benutzer/Produkte-Verwaltung schuetzt).
+// ---------------------------------------------------------------------
+
+export async function bestandJeProdukt() {
+  const alle = await getAll("lagerbewegungen");
+  const bestand = {};
+  for (const l of alle) {
+    bestand[l.produkt_id] = (bestand[l.produkt_id] || 0) + l.menge;
+  }
+  return bestand;
+}
+
+export async function bestand(produktId) {
+  const map = await bestandJeProdukt();
+  return map[produktId] || 0;
+}
+
+async function bestandJeProduktZumZeitpunkt(zeitpunkt) {
+  const alle = await getAll("lagerbewegungen");
+  const bestand = {};
+  for (const l of alle.filter((x) => x.datum <= zeitpunkt)) {
+    bestand[l.produkt_id] = (bestand[l.produkt_id] || 0) + l.menge;
+  }
+  return bestand;
+}
+
+// zeitpunkt (optional, ISO-String): wie repository.warenbestand_bericht -
+// ohne Angabe der aktuelle Bestand, sonst der Bestand zu diesem Zeitpunkt
+// (z.B. fuer "Warenbestand zu diesem Kassensturz-Zeitpunkt"). Schliesst
+// (wie am Rechner) das Pfandrueckgabe-Pseudoprodukt aus und zeigt ALLE
+// Produkte (auch deaktivierte), sortiert nach Kategorie, Name.
+export async function warenbestandBericht(zeitpunkt = null) {
+  const produkte = await getAll("produkte");
+  const bestandMap = zeitpunkt
+    ? await bestandJeProduktZumZeitpunkt(zeitpunkt)
+    : await bestandJeProdukt();
+  return produkte
+    .filter((p) => p.id !== PFAND_RUECKGABE_PRODUKT_ID)
+    .map((p) => ({
+      produkt_id: p.id,
+      name: p.name,
+      kategorie: p.kategorie,
+      bestand: bestandMap[p.id] || 0,
+    }))
+    .sort((a, b) => a.kategorie.localeCompare(b.kategorie, "de") || a.name.localeCompare(b.name, "de"));
+}
+
+// zaehlungen: {produktId: gezaehlterBestand}. Bucht je Produkt mit
+// Abweichung genau eine Korrektur-Lagerbewegung (Pendant zu
+// repository.inventur_durchfuehren) - keine eigene Inventur-Tabelle, der
+// Lagerbewegungsverlauf IST der Inventurverlauf. Liefert eine Zeile je
+// UEBERGEBENEM Produkt zurueck (auch ohne Abweichung).
+export async function inventurDurchfuehren(zaehlungen, kommentar, benutzerName) {
+  const produkte = await getAll("produkte");
+  const nameJeId = Object.fromEntries(produkte.map((p) => [p.id, p.name]));
+  const bestandVor = await bestandJeProdukt();
+  const gid = await geraetId();
+  const jetztIso = jetzt();
+  let hinweis = `Inventur vom ${datumLokal(jetztIso)}`;
+  if (kommentar && kommentar.trim()) hinweis += ` – ${kommentar.trim()}`;
+  const ergebnis = [];
+  for (const [produktId, gezaehlt] of Object.entries(zaehlungen)) {
+    const vorher = bestandVor[produktId] || 0;
+    const differenz = gezaehlt - vorher;
+    if (differenz !== 0) {
+      await lagerbewegungErfassen(
+        produktId, "Korrektur", differenz, hinweis, benutzerName, gid
+      );
+    }
+    ergebnis.push({
+      produkt_id: produktId,
+      name: nameJeId[produktId] || "",
+      bestand_vorher: vorher,
+      gezaehlt,
+      differenz,
+    });
+  }
+  return ergebnis;
+}
+
+// ---------------------------------------------------------------------
+// Abschreibungen (Runde 42 am Rechner, Runde 43 auch auf dem Tablet) -
+// Pendant zu repository.abschreibung_erfassen/-stornieren/-ist_storniert/
+// letzte_abschreibungen/abschreibungen_bericht. Technisch eine normale
+// "Korrektur"-Lagerbewegung mit negativer Menge, zusaetzlich markiert
+// (ist_abschreibung/abschreibung_grund) - Storno per Gegenbuchung
+// (storno_von), Original bleibt unveraendert (siehe lagerbewegungErfassen
+// oben).
+// ---------------------------------------------------------------------
+
+export const ABSCHREIBUNG_GRUENDE = ["Bruch", "Verderb/abgelaufen", "Diebstahl/Verlust", "Sonstiges"];
+
+export async function abschreibungErfassen(produktId, menge, grund, kommentar, benutzerName) {
+  if (menge == null || menge <= 0) throw new Error("Menge muss größer als 0 sein.");
+  if (!ABSCHREIBUNG_GRUENDE.includes(grund)) throw new Error(`Unbekannter Grund: ${grund}`);
+  const gid = await geraetId();
+  return lagerbewegungErfassen(
+    produktId, "Korrektur", -Math.abs(Math.trunc(menge)), kommentar || null, benutzerName, gid,
+    null, null, null, true, grund, null
+  );
+}
+
+export async function abschreibungIstStorniert(abschreibungId) {
+  const alle = await getAll("lagerbewegungen");
+  return alle.some((l) => l.storno_von === abschreibungId);
+}
+
+export async function abschreibungStornieren(abschreibungId, benutzerName, kommentar = null) {
+  const original = await get("lagerbewegungen", abschreibungId);
+  if (!original || !original.ist_abschreibung) throw new Error("Abschreibung nicht gefunden.");
+  if (original.storno_von) {
+    throw new Error("Eine Storno-Buchung kann nicht erneut storniert werden.");
+  }
+  if (await abschreibungIstStorniert(abschreibungId)) {
+    throw new Error("Diese Abschreibung wurde bereits storniert.");
+  }
+  const gid = await geraetId();
+  return lagerbewegungErfassen(
+    original.produkt_id, "Korrektur", -original.menge,
+    kommentar || `Storno zu Abschreibung ${abschreibungId}`, benutzerName, gid,
+    null, null, null, true, original.abschreibung_grund, abschreibungId
+  );
+}
+
+export async function letzteAbschreibungen(limit = 50) {
+  const alle = await getAll("lagerbewegungen");
+  const produkte = await getAll("produkte");
+  const nameJeId = Object.fromEntries(produkte.map((p) => [p.id, p.name]));
+  return alle
+    .filter((l) => l.ist_abschreibung)
+    .sort((a, b) => (a.datum < b.datum ? 1 : -1))
+    .slice(0, limit)
+    .map((l) => ({ ...l, produkt_name: nameJeId[l.produkt_id] || "" }));
+}
+
+// Gruppiert wie am Rechner nach (produkt_id, abschreibung_grund) - eine
+// Storno-Gegenbuchung (positive Menge) hebt Menge/Wert in derselben Summe
+// automatisch wieder auf. Nutzt immer den AKTUELLEN Einkaufspreis
+// (Abschreibungen speichern keinen eigenen einzelpreis).
+export async function abschreibungenBericht(jahr, monat) {
+  const monatStr = `${String(jahr).padStart(4, "0")}-${String(monat).padStart(2, "0")}`;
+  const alle = await getAll("lagerbewegungen");
+  const produkte = await getAll("produkte");
+  const produktJeId = Object.fromEntries(produkte.map((p) => [p.id, p]));
+  const zeilen = alle.filter(
+    (l) => l.ist_abschreibung && l.datum.slice(0, 7) === monatStr
+  );
+  const zwischenstand = {};
+  for (const l of zeilen) {
+    const p = produktJeId[l.produkt_id];
+    if (!p) continue;
+    const schluessel = `${l.produkt_id}::${l.abschreibung_grund || ""}`;
+    const eintrag = zwischenstand[schluessel] || {
+      produkt_id: l.produkt_id,
+      name: p.name,
+      grund: l.abschreibung_grund || "",
+      menge: 0,
+      wert: 0,
+    };
+    eintrag.menge = eintrag.menge - l.menge;
+    eintrag.wert = rund2(eintrag.wert - l.menge * (p.einkaufspreis || 0));
+    zwischenstand[schluessel] = eintrag;
+  }
+  return Object.values(zwischenstand).sort(
+    (a, b) => a.name.localeCompare(b.name, "de") || a.grund.localeCompare(b.grund, "de")
+  );
+}
+
+// Lokale Zeitformatierung - Pendant zu kiosk/format.py datum_lokal(),
+// analog zum Windows-Fix aus Runde 41/42 (Anzeige in Systemzeit statt
+// rohem UTC-Zeitstempel). Der ISO-String traegt bereits die UTC-
+// Zeitzoneninfo, new Date(...) rechnet automatisch in die lokale
+// Zeitzone des Geraets um.
+export function datumLokal(isoDatum) {
+  if (!isoDatum) return "";
+  try {
+    const d = new Date(isoDatum);
+    if (Number.isNaN(d.getTime())) return isoDatum.slice(0, 16).replace("T", " ");
+    const jahr = d.getFullYear();
+    const monat = String(d.getMonth() + 1).padStart(2, "0");
+    const tag = String(d.getDate()).padStart(2, "0");
+    const stunde = String(d.getHours()).padStart(2, "0");
+    const minute = String(d.getMinutes()).padStart(2, "0");
+    return `${jahr}-${monat}-${tag} ${stunde}:${minute}`;
+  } catch {
+    return isoDatum.slice(0, 16).replace("T", " ");
+  }
+}
+
+// ---------------------------------------------------------------------
+// Auswertung / Monatsabrechnung (Runde 43) - Pendant zu
+// repository.auswertung_je_kasse/monatsabrechnung und den zugehoerigen
+// Hilfsfunktionen. Rundungsstrategie: jede Zwischensumme wird nach jeder
+// Positions-Zeile sofort auf 2 Nachkommastellen gerundet (rund2), analog
+// zum Python-Original.
+// ---------------------------------------------------------------------
+
+function berechneGewinnPosition(einzelpreis, einkaufspreis, mwstSatz) {
+  const netto = rund2(einzelpreis - mwstBetrag(einzelpreis, mwstSatz));
+  return rund2(netto - (einkaufspreis || 0));
+}
+
+async function positionenMitKasse(monatFilter = null) {
+  const positionen = await getAll("positionen");
+  const vorgaenge = await getAll("kassiervorgaenge");
+  const vorgangJeId = Object.fromEntries(vorgaenge.map((v) => [v.id, v]));
+  const produkte = await getAll("produkte");
+  const produktJeId = Object.fromEntries(produkte.map((p) => [p.id, p]));
+  return positionen
+    .map((p) => {
+      const vorgang = vorgangJeId[p.vorgang_id];
+      if (!vorgang) return null;
+      if (monatFilter && vorgang.datum.slice(0, 7) !== monatFilter) return null;
+      return { ...p, veranstaltung: vorgang.veranstaltung, produkt: produktJeId[p.produkt_id] };
+    })
+    .filter(Boolean);
+}
+
+async function auswertungAusPositionen(positionen) {
+  const ergebnis = {};
+  for (const v of VERANSTALTUNGEN) {
+    ergebnis[v] = { erloes: 0, mwst_7: 0, mwst_19: 0, gewinn: 0, pfand: 0 };
+  }
+  for (const p of positionen) {
+    const k = ergebnis[p.veranstaltung];
+    if (!k) continue;
+    const brutto = p.menge * p.einzelpreis;
+    const mwst = mwstBetrag(p.einzelpreis, p.mwst_satz) * p.menge;
+    const gewinn = berechneGewinnPosition(p.einzelpreis, p.einkaufspreis, p.mwst_satz) * p.menge;
+    const pfand = p.menge * (p.pfand_betrag || 0);
+    k.erloes = rund2(k.erloes + brutto);
+    k.gewinn = rund2(k.gewinn + gewinn);
+    k.pfand = rund2(k.pfand + pfand);
+    if (Math.round(p.mwst_satz) === 7) {
+      k.mwst_7 = rund2(k.mwst_7 + mwst);
+    } else {
+      k.mwst_19 = rund2(k.mwst_19 + mwst);
+    }
+  }
+  return ergebnis;
+}
+
+// Ueber die GESAMTE Laufzeit (kein Zeitraumfilter), inkl. bereits als
+// Gewinn verbuchtem Pfand (anders als in monatsabrechnung() - siehe dort).
+export async function auswertungJeKasse() {
+  const positionen = await positionenMitKasse();
+  const ergebnis = await auswertungAusPositionen(positionen);
+  const verbucht = await pfandGewinnVerbuchtJeKasse();
+  for (const v of VERANSTALTUNGEN) {
+    const k = ergebnis[v];
+    const betrag = verbucht[v] || 0;
+    k.gewinn = rund2(k.gewinn + betrag);
+    k.pfand = rund2(k.pfand - betrag);
+  }
+  return ergebnis;
+}
+
+// ---------------------------------------------------------------------
+// Pfand-Gewinn-Verbuchung (Runde 40 am Rechner, Runde 43 auch auf dem
+// Tablet) - Pendant zu repository.pfand_gewinn_verbuchen/-stornieren.
+// Reine Umbuchung Kaution->Gewinn, kein Geldfluss.
+// ---------------------------------------------------------------------
+
+export async function pfandGewinnVerbuchen(veranstaltung, betrag, kommentar, benutzerName) {
+  if (betrag == null || betrag <= 0) throw new Error("Betrag muss größer als 0 sein.");
+  const auswertung = await auswertungJeKasse();
+  const offenesPfand = auswertung[veranstaltung]?.pfand ?? 0;
+  if (betrag > offenesPfand + 0.005) {
+    throw new Error(
+      `Betrag darf das aktuell offene Pfand (${offenesPfand.toFixed(2)} €) nicht übersteigen.`
+    );
+  }
+  const id = neueId();
+  const gid = await geraetId();
+  await put("pfand_gewinn_verbuchungen", {
+    id,
+    datum: jetzt(),
+    veranstaltung,
+    betrag: rund2(betrag),
+    kommentar: (kommentar || "").trim() || null,
+    storno_von: null,
+    rechner: GERAET_NAME,
+    geraet_id: gid,
+    synced: false,
+    synced_at: null,
+    benutzer: benutzerName,
+  });
+  return id;
+}
+
+export async function pfandGewinnVerbuchungIstStorniert(verbuchungId) {
+  const alle = await getAll("pfand_gewinn_verbuchungen");
+  return alle.some((v) => v.storno_von === verbuchungId);
+}
+
+export async function pfandGewinnStornieren(verbuchungId, benutzerName, kommentar = null) {
+  const verbuchung = await get("pfand_gewinn_verbuchungen", verbuchungId);
+  if (!verbuchung) throw new Error("Verbuchung nicht gefunden.");
+  if (verbuchung.storno_von) {
+    throw new Error("Eine Storno-Verbuchung kann nicht erneut storniert werden.");
+  }
+  if (await pfandGewinnVerbuchungIstStorniert(verbuchungId)) {
+    throw new Error("Diese Verbuchung wurde bereits storniert.");
+  }
+  const id = neueId();
+  const gid = await geraetId();
+  await put("pfand_gewinn_verbuchungen", {
+    id,
+    datum: jetzt(),
+    veranstaltung: verbuchung.veranstaltung,
+    betrag: -verbuchung.betrag,
+    kommentar: kommentar || `Storno zu Verbuchung ${verbuchungId}`,
+    storno_von: verbuchungId,
+    rechner: GERAET_NAME,
+    geraet_id: gid,
+    synced: false,
+    synced_at: null,
+    benutzer: benutzerName,
+  });
+  return id;
+}
+
+export async function letztePfandGewinnVerbuchungen(limit = 30) {
+  const alle = await getAll("pfand_gewinn_verbuchungen");
+  return alle.sort((a, b) => (a.datum < b.datum ? 1 : -1)).slice(0, limit);
+}
+
+export async function pfandGewinnVerbuchtJeKasse() {
+  const alle = await getAll("pfand_gewinn_verbuchungen");
+  const summe = {};
+  for (const v of alle) {
+    summe[v.veranstaltung] = rund2((summe[v.veranstaltung] || 0) + v.betrag);
+  }
+  return summe;
+}
+
+// ---------------------------------------------------------------------
+// Weitere Auswertungs-Bausteine (Reiter "Auswertung" -> "Helfer &
+// Zahlungen") - Pendant zu den jeweiligen repository.py-Funktionen.
+// ---------------------------------------------------------------------
+
+export async function helferkonsumJeKasse() {
+  const positionen = await positionenMitKasse();
+  const ergebnis = {};
+  for (const v of VERANSTALTUNGEN) ergebnis[v] = { anzahl: 0, betrag: 0 };
+  for (const p of positionen.filter((p) => p.ist_helferpreis)) {
+    const k = ergebnis[p.veranstaltung];
+    if (!k) continue;
+    k.anzahl += p.menge;
+    k.betrag = rund2(k.betrag + p.menge * p.einzelpreis);
+  }
+  return ergebnis;
+}
+
+export async function helferkonsumJeProdukt() {
+  const positionen = await positionenMitKasse();
+  const gruppen = {};
+  for (const p of positionen.filter((p) => p.ist_helferpreis)) {
+    const schluessel = `${p.veranstaltung}::${p.produkt_id}`;
+    const eintrag = gruppen[schluessel] || {
+      veranstaltung: p.veranstaltung,
+      produkt_name: p.produkt?.name || "",
+      anzahl: 0,
+      betrag: 0,
+    };
+    eintrag.anzahl += p.menge;
+    eintrag.betrag = rund2(eintrag.betrag + p.menge * p.einzelpreis);
+    gruppen[schluessel] = eintrag;
+  }
+  return Object.values(gruppen).filter((g) => g.anzahl !== 0);
+}
+
+async function summeJeKasse(store, seit = null, betragsFeld = "betrag") {
+  const alle = await getAll(store);
+  const ergebnis = {};
+  for (const v of VERANSTALTUNGEN) ergebnis[v] = 0;
+  for (const zeile of alle) {
+    if (seit && zeile.datum <= seit) continue;
+    if (!(zeile.veranstaltung in ergebnis)) continue;
+    ergebnis[zeile.veranstaltung] = rund2(ergebnis[zeile.veranstaltung] + zeile[betragsFeld]);
+  }
+  return ergebnis;
+}
+
+export async function schiedsrichterAuszahlungenJeKasse() {
+  return summeJeKasse("schiedsrichter_auszahlungen");
+}
+
+export async function bargeldEinzahlungenJeKasse() {
+  return summeJeKasse("bargeld_einzahlungen");
+}
+
+export async function sonstigeAusgabenJeKasse() {
+  return summeJeKasse("sonstige_ausgaben");
+}
+
+export async function bargeldEntnahmenJeKasse() {
+  return summeJeKasse("bargeld_entnahmen");
+}
+
+export async function lieferantenPfandGesamt() {
+  const alle = await getAll("lieferanten_pfand");
+  const bezahlt = rund2(alle.reduce((s, e) => s + e.bezahlt, 0));
+  const erhalten = rund2(alle.reduce((s, e) => s + e.erhalten, 0));
+  return { bezahlt, erhalten, saldo: rund2(bezahlt - erhalten) };
+}
+
+export async function lieferantenPfandMonat(jahr, monat) {
+  const monatStr = `${String(jahr).padStart(4, "0")}-${String(monat).padStart(2, "0")}`;
+  const alle = await getAll("lieferanten_pfand");
+  const zeilen = alle.filter((e) => e.datum.slice(0, 7) === monatStr);
+  const bezahlt = rund2(zeilen.reduce((s, e) => s + e.bezahlt, 0));
+  const erhalten = rund2(zeilen.reduce((s, e) => s + e.erhalten, 0));
+  return { bezahlt, erhalten, saldo: rund2(bezahlt - erhalten) };
+}
+
+export async function verkaeufeJeProdukt(jahr, monat) {
+  const monatStr = `${String(jahr).padStart(4, "0")}-${String(monat).padStart(2, "0")}`;
+  const alle = await getAll("positionen");
+  const vorgaenge = await getAll("kassiervorgaenge");
+  const vorgangJeId = Object.fromEntries(vorgaenge.map((v) => [v.id, v]));
+  const produkte = await getAll("produkte");
+  const produktJeId = Object.fromEntries(produkte.map((p) => [p.id, p]));
+  const gruppen = {};
+  for (const p of alle) {
+    if (p.ist_pfandrueckgabe) continue;
+    const vorgang = vorgangJeId[p.vorgang_id];
+    if (!vorgang || vorgang.datum.slice(0, 7) !== monatStr) continue;
+    const produkt = produktJeId[p.produkt_id];
+    const schluessel = `${vorgang.veranstaltung}::${p.produkt_id}`;
+    const eintrag = gruppen[schluessel] || {
+      veranstaltung: vorgang.veranstaltung,
+      produkt_name: produkt ? produkt.name : "",
+      anzahl: 0,
+      betrag: 0,
+    };
+    eintrag.anzahl += p.menge;
+    eintrag.betrag = rund2(eintrag.betrag + p.menge * p.einzelpreis);
+    gruppen[schluessel] = eintrag;
+  }
+  return Object.values(gruppen).filter((g) => g.anzahl !== 0);
+}
+
+export async function wareneinkaufBericht(jahr, monat) {
+  const monatStr = `${String(jahr).padStart(4, "0")}-${String(monat).padStart(2, "0")}`;
+  const alle = await getAll("lagerbewegungen");
+  const produkte = await getAll("produkte");
+  const produktJeId = Object.fromEntries(produkte.map((p) => [p.id, p]));
+  const gruppen = {};
+  for (const l of alle) {
+    if (l.typ !== "Wareneingang" || l.datum.slice(0, 7) !== monatStr) continue;
+    const produkt = produktJeId[l.produkt_id];
+    if (!produkt) continue;
+    const eintrag = gruppen[l.produkt_id] || {
+      produkt_id: l.produkt_id,
+      name: produkt.name,
+      menge: 0,
+      netto: 0,
+      mwst: 0,
+      geschaetzt: false,
+    };
+    eintrag.menge += l.menge;
+    const geschaetzt = l.einzelpreis == null;
+    const einzelpreis = geschaetzt ? produkt.einkaufspreis || 0 : l.einzelpreis;
+    const satz = geschaetzt ? produkt.mwst_satz || 0 : l.mwst_satz || 0;
+    eintrag.netto = rund2(eintrag.netto + einzelpreis * l.menge);
+    eintrag.mwst = rund2(eintrag.mwst + (einzelpreis * l.menge * satz) / 100);
+    eintrag.geschaetzt = eintrag.geschaetzt || geschaetzt;
+    gruppen[l.produkt_id] = eintrag;
+  }
+  return Object.values(gruppen)
+    .map((e) => ({ ...e, brutto: rund2(e.netto + e.mwst) }))
+    .sort((a, b) => a.name.localeCompare(b.name, "de"));
+}
+
+// Vollstaendige Monatsabrechnung - Pendant zu repository.monatsabrechnung.
+// WICHTIG: je_kasse rechnet hier - anders als auswertungJeKasse() - die
+// Pfand-Gewinn-Verbuchung NICHT ein (reine Monatszahlen aus den
+// Positionen), exakt wie am Rechner.
+export async function monatsabrechnung(jahr, monat) {
+  const monatStr = `${String(jahr).padStart(4, "0")}-${String(monat).padStart(2, "0")}`;
+  const positionenAlle = await positionenMitKasse(monatStr);
+  const jeKasse = await auswertungAusPositionen(positionenAlle);
+
+  const kassenstuerzeAlle = await getAll("kassenstuerze");
+  const kassensturzHistorie = kassenstuerzeAlle
+    .filter((k) => k.datum.slice(0, 7) === monatStr)
+    .sort((a, b) => (a.datum < b.datum ? -1 : 1));
+
+  const entnahmeJeKasse = {};
+  for (const v of VERANSTALTUNGEN) entnahmeJeKasse[v] = 0;
+  for (const k of kassensturzHistorie) {
+    if (!(k.veranstaltung in entnahmeJeKasse)) continue;
+    entnahmeJeKasse[k.veranstaltung] = rund2(
+      entnahmeJeKasse[k.veranstaltung] + (k.gezaehlter_betrag - k.naechster_startbetrag)
+    );
+  }
+
+  const einzahlungenAlle = await getAll("bargeld_einzahlungen");
+  const ausgabenAlle = await getAll("sonstige_ausgaben");
+  const entnahmenAlle = await getAll("bargeld_entnahmen");
+  const schiedsrichterAlle = await getAll("schiedsrichter_auszahlungen");
+
+  const einzahlungJeKasse = await summeMonat(einzahlungenAlle, monatStr);
+  const sonstigeAusgabenJeKasseM = await summeMonat(ausgabenAlle, monatStr);
+  const schiedsrichterJeKasse = await summeMonat(schiedsrichterAlle, monatStr);
+  const bargeldEntnahmenGebucht = entnahmenAlle
+    .filter((e) => e.datum.slice(0, 7) === monatStr)
+    .sort((a, b) => (a.datum < b.datum ? -1 : 1));
+
+  const verkaeufe = await verkaeufeJeProdukt(jahr, monat);
+  const gesamtMengeVerkauft = verkaeufe.reduce((s, v) => s + v.anzahl, 0);
+  const wareneinkauf = await wareneinkaufBericht(jahr, monat);
+  const gesamtMengeEingekauft = wareneinkauf.reduce((s, w) => s + w.menge, 0);
+  const wareneinkaufGeschaetzt = wareneinkauf.some((w) => w.geschaetzt);
+  const gesamtWareneinkaufNetto = rund2(wareneinkauf.reduce((s, w) => s + w.netto, 0));
+  const gesamtVorsteuer = rund2(wareneinkauf.reduce((s, w) => s + w.mwst, 0));
+  const gesamtWareneinkaufBrutto = rund2(gesamtWareneinkaufNetto + gesamtVorsteuer);
+
+  const gesamtErloes = rund2(VERANSTALTUNGEN.reduce((s, v) => s + jeKasse[v].erloes, 0));
+  const gesamtGewinn = rund2(VERANSTALTUNGEN.reduce((s, v) => s + jeKasse[v].gewinn, 0));
+  const gesamtPfand = rund2(VERANSTALTUNGEN.reduce((s, v) => s + jeKasse[v].pfand, 0));
+  const gesamtUmsatzsteuer = rund2(
+    VERANSTALTUNGEN.reduce((s, v) => s + jeKasse[v].mwst_7 + jeKasse[v].mwst_19, 0)
+  );
+  const gesamtSchiedsrichter = rund2(VERANSTALTUNGEN.reduce((s, v) => s + (schiedsrichterJeKasse[v] || 0), 0));
+  const gesamtSonstigeAusgaben = rund2(
+    VERANSTALTUNGEN.reduce((s, v) => s + (sonstigeAusgabenJeKasseM[v] || 0), 0)
+  );
+  const lieferantenPfand = await lieferantenPfandMonat(jahr, monat);
+  const abschreibungen = await abschreibungenBericht(jahr, monat);
+  const gesamtAbschreibungenWert = rund2(abschreibungen.reduce((s, a) => s + a.wert, 0));
+
+  return {
+    jahr,
+    monat,
+    je_kasse: jeKasse,
+    schiedsrichter_je_kasse: schiedsrichterJeKasse,
+    kassensturz_historie: kassensturzHistorie,
+    entnahme_je_kasse: entnahmeJeKasse,
+    einzahlung_je_kasse: einzahlungJeKasse,
+    sonstige_ausgaben_je_kasse: sonstigeAusgabenJeKasseM,
+    bargeld_entnahmen_gebucht: bargeldEntnahmenGebucht,
+    verkaeufe_je_produkt: verkaeufe,
+    gesamt_menge_verkauft: gesamtMengeVerkauft,
+    wareneinkauf,
+    gesamt_menge_eingekauft: gesamtMengeEingekauft,
+    wareneinkauf_teilweise_geschaetzt: wareneinkaufGeschaetzt,
+    gesamt_wareneinkauf_netto: gesamtWareneinkaufNetto,
+    gesamt_vorsteuer: gesamtVorsteuer,
+    gesamt_wareneinkauf_brutto: gesamtWareneinkaufBrutto,
+    gesamt_erloes: gesamtErloes,
+    gesamt_gewinn: gesamtGewinn,
+    gesamt_pfand: gesamtPfand,
+    lieferanten_pfand: lieferantenPfand,
+    gesamt_schiedsrichter: gesamtSchiedsrichter,
+    gesamt_ergebnis_nach_schiedsrichter: rund2(gesamtGewinn - gesamtSchiedsrichter),
+    gesamt_sonstige_ausgaben: gesamtSonstigeAusgaben,
+    gesamt_ergebnis_nach_ausgaben: rund2(gesamtGewinn - gesamtSchiedsrichter - gesamtSonstigeAusgaben),
+    gesamt_umsatzsteuer: gesamtUmsatzsteuer,
+    mwst_zahllast: rund2(gesamtUmsatzsteuer - gesamtVorsteuer),
+    abschreibungen,
+    gesamt_abschreibungen_wert: gesamtAbschreibungenWert,
+  };
+}
+
+async function summeMonat(zeilen, monatStr) {
+  const ergebnis = {};
+  for (const v of VERANSTALTUNGEN) ergebnis[v] = 0;
+  for (const z of zeilen) {
+    if (z.datum.slice(0, 7) !== monatStr) continue;
+    if (!(z.veranstaltung in ergebnis)) continue;
+    ergebnis[z.veranstaltung] = rund2(ergebnis[z.veranstaltung] + z.betrag);
+  }
+  return ergebnis;
 }

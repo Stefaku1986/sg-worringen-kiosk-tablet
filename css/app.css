@@ -604,3 +604,53 @@ textarea.betrag {
   color: #666;
   font-size: 14px;
 }
+
+/* -------------------- Auswertung (Runde 43) -------------------- */
+/* Zwei Kasse-Kennzahlen-Karten nebeneinander (Jugend/Senioren), fallen auf
+   schmalen Bildschirmen automatisch untereinander - siehe main.js
+   renderAuswertungKennzahlen(). */
+.zwei-spalten {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 16px;
+}
+.zwei-spalten .karte {
+  margin-bottom: 0;
+}
+
+/* Druckansicht (Bestand/Monatsabrechnung, siehe main.js druckenOeffnen()) -
+   wird in einem eigenen Browser-Fenster/-Tab verwendet, nicht in dieser
+   App selbst, daher hier als eigener, einfacher Block statt @media print. */
+.druck-seite {
+  font-family: "Segoe UI", Arial, sans-serif;
+  color: #20242c;
+  padding: 24px;
+}
+.druck-seite h1 {
+  color: #1c3a75;
+  font-size: 20px;
+  margin-bottom: 4px;
+}
+.druck-seite h2 {
+  color: #1c3a75;
+  font-size: 15px;
+  margin: 20px 0 6px 0;
+}
+.druck-seite table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 12px;
+}
+.druck-seite th, .druck-seite td {
+  border: 1px solid #d8dbe3;
+  padding: 4px 8px;
+  text-align: left;
+  font-size: 13px;
+}
+.druck-seite th {
+  background: #e8edf9;
+}
+.druck-seite .gesamt-zeile td {
+  font-weight: 700;
+  border-top: 2px solid #1c3a75;
+}

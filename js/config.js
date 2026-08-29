@@ -14,7 +14,19 @@ export const SUPABASE_ANON_KEY = "sb_publishable_UGRAXILrHUkfckecBNXLrQ_6Mgrq_sQ
 // analog zur Fenstertitel-Versionsanzeige der Windows-App (kiosk/__version__.py).
 // Bei sichtbaren Aenderungen an der Tablet-App bitte erhoehen (z.B. 1.1.0
 // fuer neue Funktionen, 1.0.1 fuer reine Bugfixes).
-export const APP_VERSION = "1.16.0";
+export const APP_VERSION = "1.17.0";
+
+// Kategorien und Vorschlagswert fuer den MwSt.-Satz beim Anlegen eines
+// Produkts (Runde 43, Produktverwaltung auf dem Tablet) - identisch zu
+// kiosk/config.py MWST_SAETZE. Nur ein Vorschlag, pro Produkt aenderbar.
+export const MWST_SAETZE = { Speise: 7, Getraenk: 19 };
+
+// Supabase-Storage-Bucket fuer Beleg-Fotos (Runde 43, Kamera-Beleg-Scan
+// auf dem Tablet) - derselbe Bucket "belege" wie am Rechner (siehe
+// kiosk/config.py SUPABASE_BELEGE_BUCKET), aber ohne OCR: die Fotos werden
+// unbearbeitet direkt beim Erfassen eines Wareneingangs hochgeladen (siehe
+// sync.js belegHochladen()).
+export const SUPABASE_BELEGE_BUCKET = "belege";
 
 // Feste ID eines einzigen, bewusst deaktivierten Pseudo-Produkts
 // "Pfandrückgabe (pauschal)" (pfand_betrag = 2,00 €), einmalig direkt in
