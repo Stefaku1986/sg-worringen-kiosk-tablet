@@ -111,6 +111,7 @@
         <div id="warenkorb-spalte">
           <button id="helferpreis-btn" class="btn helferpreis-btn">Helferpreis (für den nächsten Artikel)</button>
           <button id="pfand-rueckgabe-btn" class="btn pfand-rueckgabe-btn">Pfand zurückgeben (2,00 €)</button>
+          <button id="kaffee-trainer-btn" class="btn">☕ Kaffee für Trainer (kostenlos)</button>
           <div id="warenkorb-liste"></div>
           <div id="summe">Summe: 0,00 €</div>
           <button id="bezahlen-btn" class="btn btn-primaer">Bezahlen</button>
@@ -680,7 +681,9 @@
         <b>„Helferpreis“</b> gilt jeweils nur für den nächsten angetippten
         Artikel. Beim <b>Bezahlen</b> ist das Feld „Gegeben“ bewusst leer –
         der erhaltene Betrag muss aktiv eingetippt werden, das Rückgeld wird
-        automatisch berechnet.</p>
+        automatisch berechnet. Der Knopf <b>„☕ Kaffee für Trainer
+        (kostenlos)“</b> bucht mit einem Klick sofort 1x Kaffee kostenlos
+        (Bestand sinkt), ganz ohne Warenkorb und ohne Bezahlvorgang.</p>
 
         <h3>Storno</h3>
         <p>Im Reiter <b>„Stornieren“</b> stehen die letzten Kassiervorgänge –
@@ -784,7 +787,12 @@
         Gewinn (<b>„Pfand-Gewinn verbuchen“</b>) sowie die
         <b>Monatsabrechnung</b> für einen ausgewählten Monat – mit
         Verkäufen je Produkt, Wareneinkauf, Abschreibungen und
-        MwSt.-Zahllast. Über <b>„Drucken“</b> öffnet sich ein
+        MwSt.-Zahllast. Der <b>Gewinn</b> je Kasse ist dabei der
+        Netto-Erlös abzüglich des tatsächlichen Wareneinkaufs (echte
+        Nachbestellungs-/Wareneingangspreise statt nur geschätzter
+        Einkaufspreis je Produkt), anteilig nach Erlösanteil auf Jugend-
+        und Seniorenkasse verteilt (Zeile <b>„Wareneinkauf
+        (anteilig)“</b>). Über <b>„Drucken“</b> öffnet sich ein
         Browser-Druckfenster.</p>
 
         <h3>Admin-Verwaltung (nur Administratoren)</h3>

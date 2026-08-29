@@ -14,7 +14,7 @@ export const SUPABASE_ANON_KEY = "sb_publishable_UGRAXILrHUkfckecBNXLrQ_6Mgrq_sQ
 // analog zur Fenstertitel-Versionsanzeige der Windows-App (kiosk/__version__.py).
 // Bei sichtbaren Aenderungen an der Tablet-App bitte erhoehen (z.B. 1.1.0
 // fuer neue Funktionen, 1.0.1 fuer reine Bugfixes).
-export const APP_VERSION = "1.17.0";
+export const APP_VERSION = "1.18.0";
 
 // Kategorien und Vorschlagswert fuer den MwSt.-Satz beim Anlegen eines
 // Produkts (Runde 43, Produktverwaltung auf dem Tablet) - identisch zu
@@ -46,6 +46,16 @@ export const PFAND_RUECKGABE_PRODUKT_ID = "381da34f-d563-45f5-ad65-7b4e1b0c6877"
 // ohne Dialog.
 export const SCHIEDSRICHTER_WASSER_STILL_PRODUKT_ID = "1804076f-009f-46e4-a93c-3e647dfcc391";
 export const SCHIEDSRICHTER_WASSER_MEDIUM_PRODUKT_ID = "a018c117-f967-44b0-955a-e5d0bbaa0f24";
+
+// Runde 44: feste ID des bereits bestehenden, aktiven Produkts
+// "Kaffee (Nespresso)" (Kategorie Getraenk, VK 1,50 €, MwSt 19%, kein
+// Pfand), fuer den kostenlosen "Kaffee für Trainer"-Knopf im Reiter
+// "Verkauf" (siehe kiosk/repository.py KAFFEE_TRAINER_PRODUKT_ID, identisch
+// auf Windows und Tablet). Anders als bei den SCHIEDSRICHTER_WASSER_*-
+// Knöpfen (Reiter "Schiedsrichter") gibt es dafuer keine eigene
+// Auszahlungs-Tabelle - es wird direkt eine Korrektur-Lagerbewegung
+// gebucht, ganz ohne Kassiervorgang.
+export const KAFFEE_TRAINER_PRODUKT_ID = "e6f29dd2-2c17-4ca1-a418-bb36365bd703";
 
 // Wie am Rechner: die Kassen, zwischen denen umgeschaltet werden kann.
 export const VERANSTALTUNGEN = ["Jugend", "Senioren"];

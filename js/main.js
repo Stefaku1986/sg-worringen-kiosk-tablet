@@ -10,6 +10,7 @@ import {
   FEEDBACK_STATUS_LABEL,
   SCHIEDSRICHTER_WASSER_STILL_PRODUKT_ID,
   SCHIEDSRICHTER_WASSER_MEDIUM_PRODUKT_ID,
+  KAFFEE_TRAINER_PRODUKT_ID,
   VERANSTALTUNGEN,
   MWST_SAETZE,
 } from "./config.js";
@@ -110,6 +111,7 @@ const katBtnGetraenk = el("kat-btn-Getraenk");
 const katBtnSpeise = el("kat-btn-Speise");
 const helferpreisBtn = el("helferpreis-btn");
 const pfandRueckgabeBtn = el("pfand-rueckgabe-btn");
+const kaffeeTrainerBtn = el("kaffee-trainer-btn");
 const warenkorbListe = el("warenkorb-liste");
 const summeEl = el("summe");
 const bezahlenBtn = el("bezahlen-btn");
@@ -877,6 +879,41 @@ async function pfandRueckgabeKlick() {
     });
   }
   renderWarenkorb();
+}
+
+// Runde 44: "Kaffee für Trainer" - Ein-Klick-Knopf im Reiter "Verkauf",
+// fuer ALLE Benutzer sichtbar (kein Admin-Recht noetig). Analog zu den
+// SCHIEDSRICHTER_WASSER_*-Knoepfen (siehe schiedsrichterWasserAusgeben)
+// wird KEIN Warenkorb/Bezahlen-Ablauf durchlaufen und KEIN Kassiervorgang
+// erzeugt - nur eine reine Korrektur-Lagerbewegung ueber die bereits
+// vorhandene repo.lagerbewegungErfassen(), die den Bestand um 1 senkt.
+// Anders als bei den Schiedsrichter-Wasser-Knoepfen gibt es hier keine
+// eigene Auszahlungs-Tabelle (kein Bargeld-Bezug), daher direkter Aufruf
+// von lagerbewegungErfassen() statt ueber schiedsrichterAuszahlungErfassen.
+async function kaffeeFuerTrainerAusgeben() {
+  const bestaetigt = await zeigeBestaetigung(
+    "Kaffee kostenlos ausgeben?",
+    "1x Kaffee kostenlos an einen Trainer ausgeben?"
+  );
+  if (!bestaetigt) return;
+
+  const benutzer = session.getAktuellerBenutzer();
+  const gid = await geraetId();
+  try {
+    await repo.lagerbewegungErfassen(
+      KAFFEE_TRAINER_PRODUKT_ID,
+      "Korrektur",
+      -1,
+      "Kostenlose Ausgabe an Trainer",
+      benutzer.name,
+      gid
+    );
+  } catch (exc) {
+    zeigeHinweis("Fehler beim Buchen", exc.message ?? String(exc));
+    return;
+  }
+  zeigeHinweis("Kaffee ausgegeben", "1x Kaffee wurde kostenlos an einen Trainer ausgegeben.");
+  if (aktuelleAnsicht === "warenwirtschaft") renderWarenwirtschaft();
 }
 
 function renderWarenkorb() {
@@ -2466,9 +2503,11 @@ async function inventurSpeichern() {
 }
 
 // ---------------------------------------------------------------------
-// Auswertung / Monatsabrechnung (Runde 43) - Pendant zu
-// repository.auswertung_je_kasse/monatsabrechnung. Nur fuer
-// Administratoren sichtbar (siehe nachAnmeldungAnzeigen).
+// Auswertung / Monatsabrechnung (Runde 43, Gewinn-Berechnung ab Runde 44
+// ueber anteiligen Wareneinkauf - siehe js/repo.js auswertungJeKasse()/
+// monatsabrechnung()) - Pendant zu repository.auswertung_je_kasse/
+// monatsabrechnung. Nur fuer Administratoren sichtbar (siehe
+// nachAnmeldungAnzeigen).
 // ---------------------------------------------------------------------
 
 async function renderAuswertung() {
@@ -2485,6 +2524,7 @@ async function renderAuswertung() {
       <div class="kennzahl-zeile"><span>MwSt. 19 %</span><span>${euro(k.mwst_19)}</span></div>
       <div class="kennzahl-zeile"><span>Offenes Pfand</span><span>${euro(k.pfand)}</span></div>
       <div class="kennzahl-zeile gesamt"><span>Gewinn</span><span>${euro(k.gewinn)}</span></div>
+      <div class="kennzahl-zeile" title="Anteiliger Wareneinkauf (Nachbestellungen + sonstige Wareneingänge), aufgeteilt nach Erlösanteil dieser Kasse. Ist bereits im Gewinn oben abgezogen."><span>Wareneinkauf (anteilig)</span><span>${euro(k.wareneinkauf_anteil)}</span></div>
     `;
     auKasseKennzahlen.appendChild(karte);
   }
@@ -2590,7 +2630,7 @@ async function monatsabrechnungAnzeigen() {
 function monatsabrechnungHtml(m) {
   const jeKasseZeilen = VERANSTALTUNGEN.map((v) => {
     const k = m.je_kasse[v];
-    return `<tr><td>${KASSE_LABEL[v] ?? v}</td><td>${euro(k.erloes)}</td><td>${euro(k.mwst_7)}</td><td>${euro(k.mwst_19)}</td><td>${euro(k.gewinn)}</td><td>${euro(k.pfand)}</td></tr>`;
+    return `<tr><td>${KASSE_LABEL[v] ?? v}</td><td>${euro(k.erloes)}</td><td>${euro(k.mwst_7)}</td><td>${euro(k.mwst_19)}</td><td>${euro(k.gewinn)}</td><td>${euro(k.wareneinkauf_anteil)}</td><td>${euro(k.pfand)}</td></tr>`;
   }).join("");
 
   const verkaeufeZeilen =
@@ -2616,7 +2656,7 @@ function monatsabrechnungHtml(m) {
 
   return `
     <h2>Je Kasse</h2>
-    <table><thead><tr><th>Kasse</th><th>Umsatz</th><th>MwSt. 7%</th><th>MwSt. 19%</th><th>Gewinn</th><th>Offenes Pfand</th></tr></thead><tbody>${jeKasseZeilen}</tbody></table>
+    <table><thead><tr><th>Kasse</th><th>Umsatz</th><th>MwSt. 7%</th><th>MwSt. 19%</th><th>Gewinn</th><th>Wareneinkauf (anteilig)</th><th>Offenes Pfand</th></tr></thead><tbody>${jeKasseZeilen}</tbody></table>
     <div class="kennzahl-zeile"><span>Gesamt-Umsatz</span><span>${euro(m.gesamt_erloes)}</span></div>
     <div class="kennzahl-zeile"><span>Gesamt-Gewinn</span><span>${euro(m.gesamt_gewinn)}</span></div>
     <div class="kennzahl-zeile"><span>Schiedsrichter-Auszahlungen</span><span>${euro(m.gesamt_schiedsrichter)}</span></div>
@@ -3192,6 +3232,9 @@ function wireEvents() {
   // Kein Umschalter mehr: ein Antippen bucht sofort eine pauschale
   // Pfandrückgabe (siehe pfandRueckgabeKlick).
   pfandRueckgabeBtn.onclick = () => pfandRueckgabeKlick();
+
+  // Runde 44: "Kaffee für Trainer" - siehe kaffeeFuerTrainerAusgeben().
+  kaffeeTrainerBtn.onclick = () => kaffeeFuerTrainerAusgeben();
 
   bezahlenBtn.onclick = bezahlenOeffnen;
   bezahlenAbbrechenBtn.onclick = bezahlenSchliessen;
