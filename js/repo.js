@@ -315,6 +315,22 @@ export async function schiedsrichterAuszahlungIstStorniert(auszahlungId) {
   return alle.some((a) => a.storno_von === auszahlungId);
 }
 
+// Runde 42: der Kommentar laesst sich - anders als Betrag/Mannschaft/
+// kostenlose Artikel - direkt nachtraeglich aendern (analog zu
+// feedbackStatusSetzen), da er reine Anmerkung ist, kein Geldbetrag.
+export async function schiedsrichterAuszahlungKommentarSetzen(auszahlungId, kommentar) {
+  const auszahlung = await get("schiedsrichter_auszahlungen", auszahlungId);
+  if (!auszahlung) throw new Error("Auszahlung nicht gefunden.");
+  const gid = await geraetId();
+  await put("schiedsrichter_auszahlungen", {
+    ...auszahlung,
+    kommentar: (kommentar || "").trim() || null,
+    geraet_id: gid,
+    synced: false,
+    synced_at: null,
+  });
+}
+
 export async function schiedsrichterAuszahlungStornieren(auszahlungId, benutzerName, kommentar = null) {
   const auszahlung = await get("schiedsrichter_auszahlungen", auszahlungId);
   if (!auszahlung) throw new Error("Auszahlung nicht gefunden.");

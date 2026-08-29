@@ -253,6 +253,52 @@ function zeigeHinweis(titel, text) {
   hinweisOverlay.classList.remove("versteckt");
 }
 
+// Runde 42: einfache Text-Eingabe im selben Hinweis-Overlay wie
+// zeigeHinweis/zeigeBestaetigung - fuegt dynamisch ein <textarea> ein
+// statt ein eigenes Overlay in index.html anzulegen. resolve(null) bei
+// Abbrechen, sonst der eingegebene Text (kann leer sein).
+function zeigeTextEingabe(titel, text, anfangswert = "") {
+  return new Promise((resolve) => {
+    hinweisTitel.textContent = titel;
+    hinweisText.textContent = text;
+    hinweisAktionen.innerHTML = "";
+
+    const feld = document.createElement("textarea");
+    feld.id = "hinweis-text-eingabe";
+    feld.value = anfangswert || "";
+    feld.rows = 3;
+    feld.style.width = "100%";
+    feld.style.marginTop = "8px";
+    feld.style.boxSizing = "border-box";
+    hinweisText.after(feld);
+
+    const aufraeumen = () => {
+      feld.remove();
+    };
+
+    const abbrechenBtn = document.createElement("button");
+    abbrechenBtn.className = "btn";
+    abbrechenBtn.textContent = "Abbrechen";
+    abbrechenBtn.onclick = () => {
+      aufraeumen();
+      hinweisSchliessen();
+      resolve(null);
+    };
+    const okBtn = document.createElement("button");
+    okBtn.className = "btn btn-primaer";
+    okBtn.textContent = "Speichern";
+    okBtn.onclick = () => {
+      const wert = feld.value;
+      aufraeumen();
+      hinweisSchliessen();
+      resolve(wert);
+    };
+    hinweisAktionen.appendChild(abbrechenBtn);
+    hinweisAktionen.appendChild(okBtn);
+    hinweisOverlay.classList.remove("versteckt");
+  });
+}
+
 function zeigeBestaetigung(titel, text, jaText = "Ja") {
   return new Promise((resolve) => {
     hinweisTitel.textContent = titel;
@@ -1120,6 +1166,7 @@ async function renderSchiedsrichter() {
       auszahlung.schiedsrichter_name || "–",
       euro(auszahlung.betrag, true),
       kostenlosText,
+      auszahlung.kommentar || "–",
       status,
     ];
     for (const wert of zellen) {
@@ -1152,6 +1199,28 @@ async function renderSchiedsrichter() {
       };
       tdAktion.appendChild(btn);
     }
+    // Runde 42: Kommentar laesst sich unabhaengig vom Storno-Status
+    // bearbeiten - reine Anmerkung, kein Geldbetrag.
+    const kommentarBtn = document.createElement("button");
+    kommentarBtn.type = "button";
+    kommentarBtn.className = "btn";
+    kommentarBtn.textContent = "Kommentar bearbeiten";
+    kommentarBtn.onclick = async () => {
+      const neuerText = await zeigeTextEingabe(
+        "Kommentar bearbeiten",
+        `Kommentar zur Auszahlung vom ${formatDatumUhrzeit(auszahlung.datum)} über ${euro(auszahlung.betrag)}:`,
+        auszahlung.kommentar || ""
+      );
+      if (neuerText === null) return;
+      try {
+        await repo.schiedsrichterAuszahlungKommentarSetzen(auszahlung.id, neuerText);
+      } catch (exc) {
+        zeigeHinweis("Fehler beim Speichern", exc.message ?? String(exc));
+        return;
+      }
+      renderSchiedsrichter();
+    };
+    tdAktion.appendChild(kommentarBtn);
     tr.appendChild(tdAktion);
     srTabelleBody.appendChild(tr);
   }
