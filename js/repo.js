@@ -1545,7 +1545,9 @@ async function einkaufspreiseJeProdukt() {
   const summen = {};
   for (const l of alle) {
     if (l.typ !== "Wareneingang") continue;
-    if (l.einzelpreis == null) continue;
+    // Ein erfasster Preis von 0,00 EUR ist kein realistischer
+    // Einkaufspreis - wird deshalb wie nicht erfasst behandelt (Runde 46).
+    if (l.einzelpreis == null || l.einzelpreis <= 0) continue;
     if (!(l.menge > 0)) continue;
     const eintrag = summen[l.produkt_id] || { menge: 0, netto: 0 };
     eintrag.menge += l.menge;
@@ -1877,7 +1879,9 @@ export async function wareneinkaufBericht(jahr, monat) {
       geschaetzt: false,
     };
     eintrag.menge += l.menge;
-    const geschaetzt = l.einzelpreis == null;
+    // Ein erfasster Preis von 0,00 EUR ist kein realistischer
+    // Einkaufspreis - wird deshalb wie nicht erfasst behandelt (Runde 46).
+    const geschaetzt = l.einzelpreis == null || l.einzelpreis <= 0;
     const einzelpreis = geschaetzt ? produkt.einkaufspreis || 0 : l.einzelpreis;
     const satz = geschaetzt ? produkt.mwst_satz || 0 : l.mwst_satz || 0;
     eintrag.netto = rund2(eintrag.netto + einzelpreis * l.menge);
@@ -1907,7 +1911,9 @@ export async function wareneinkaufGesamt() {
     if (l.typ !== "Wareneingang") continue;
     const produkt = produktJeId[l.produkt_id];
     if (!produkt) continue;
-    const geschaetzt = l.einzelpreis == null;
+    // Ein erfasster Preis von 0,00 EUR ist kein realistischer
+    // Einkaufspreis - wird deshalb wie nicht erfasst behandelt (Runde 46).
+    const geschaetzt = l.einzelpreis == null || l.einzelpreis <= 0;
     const einzelpreis = geschaetzt ? produkt.einkaufspreis || 0 : l.einzelpreis;
     netto = rund2(netto + einzelpreis * l.menge);
   }
