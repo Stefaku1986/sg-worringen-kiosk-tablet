@@ -3267,7 +3267,12 @@ async function nachSyncAktualisieren() {
 // ---------------------------------------------------------------------
 
 onSynchronisiert((ergebnis) => {
-  syncStatusEl.textContent = `Zuletzt synchronisiert: ${formatUhrzeit(ergebnis.zeitpunkt)} (↑${ergebnis.gepusht} ↓${ergebnis.geholt})`;
+  let statusText = `Zuletzt synchronisiert: ${formatUhrzeit(ergebnis.zeitpunkt)} (↑${ergebnis.gepusht} ↓${ergebnis.geholt})`;
+  if (ergebnis.fehlgeschlageneTabellen && ergebnis.fehlgeschlageneTabellen.length > 0) {
+    const tabellen = ergebnis.fehlgeschlageneTabellen.join(", ");
+    statusText += ` ⚠ ${ergebnis.fehlgeschlageneTabellen.length} Tabellen fehlgeschlagen: ${tabellen}`;
+  }
+  syncStatusEl.textContent = statusText;
   nachSyncAktualisieren();
 });
 
@@ -3276,6 +3281,8 @@ async function syncManuellAusloesen() {
   syncStatusEl.textContent = "Synchronisiere…";
   const ergebnis = await syncJetzt();
   if (ergebnis.fehler) {
+    // ergebnis.fehler enthält bereits die aussagekraeftige Meldung,
+    // inklusive Tabellennamen bei Teilfehlern.
     syncStatusEl.textContent = `Sync fehlgeschlagen: ${ergebnis.fehler}`;
   }
   syncJetztBtn.disabled = false;

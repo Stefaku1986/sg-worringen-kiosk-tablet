@@ -170,8 +170,10 @@ function verzoegerung(ms, wert) {
 }
 
 export async function syncJetzt() {
-  const ergebnis = { gepusht: 0, geholt: 0, zeitpunkt: null, fehler: null };
+  const ergebnis = { gepusht: 0, geholt: 0, zeitpunkt: null, fehler: null, fehlgeschlageneTabellen: [] };
   const ZEITUEBERSCHREITUNG = Symbol("zeitueberschreitung");
+  const fehlgeschlageneMit = new Set(); // sammelt Tabellennamen (nur unique)
+
   try {
     // Laeuft bewusst als eigenstaendiges Promise weiter, auch wenn das
     // Zeitlimit unten zuerst greift: die einzelnen Tabellen-Operationen
@@ -179,11 +181,24 @@ export async function syncJetzt() {
     // ein evtl. verspaeteter Erfolg geht also nicht verloren, auch wenn
     // schon eine Zeitueberschreitung gemeldet wurde.
     const lauf = (async () => {
+      // Push: mit eigenem try/catch pro Tabelle, damit eine Fehler
+      // die uebrigen nicht unterbricht.
       for (const tabelle of SCHREIBBARE_TABELLEN) {
-        ergebnis.gepusht += await pushTabelle(tabelle);
+        try {
+          ergebnis.gepusht += await pushTabelle(tabelle);
+        } catch (exc) {
+          fehlgeschlageneMit.add(tabelle);
+          console.error(`Sync Push fehlgeschlagen für "${tabelle}":`, exc?.message ?? String(exc));
+        }
       }
+      // Pull: eigenstaendige Schleife mit eigenem try/catch pro Tabelle.
       for (const tabelle of ALLE_TABELLEN) {
-        ergebnis.geholt += await pullTabelle(tabelle);
+        try {
+          ergebnis.geholt += await pullTabelle(tabelle);
+        } catch (exc) {
+          fehlgeschlageneMit.add(tabelle);
+          console.error(`Sync Pull fehlgeschlagen für "${tabelle}":`, exc?.message ?? String(exc));
+        }
       }
     })();
     const wettlaufErgebnis = await Promise.race([
@@ -197,10 +212,21 @@ export async function syncJetzt() {
           "und die App neu öffnen."
       );
     }
+
+    // Fehlgeschlagene Tabellen im stabiler Reihenfolge sammeln.
+    if (fehlgeschlageneMit.size > 0) {
+      ergebnis.fehlgeschlageneTabellen = ALLE_TABELLEN.filter((t) => fehlgeschlageneMit.has(t));
+      const tabellennamen = ergebnis.fehlgeschlageneTabellen.join(", ");
+      const anzahl = ergebnis.fehlgeschlageneTabellen.length;
+      ergebnis.fehler = `${anzahl} von ${ALLE_TABELLEN.length} Tabellen konnten nicht synchronisiert werden: ${tabellennamen}`;
+    }
+
     ergebnis.zeitpunkt = new Date().toISOString();
     synchronisiertCallback?.(ergebnis);
   } catch (exc) {
     ergebnis.fehler = exc?.message ?? String(exc);
+    // Bei Fehler beim Verbindungsaufbau: fehlgeschlageneTabellen bleibt leer,
+    // zeitpunkt wird nicht gesetzt.
   }
   return ergebnis;
 }
