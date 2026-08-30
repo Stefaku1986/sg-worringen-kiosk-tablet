@@ -14,7 +14,7 @@ export const SUPABASE_ANON_KEY = "sb_publishable_UGRAXILrHUkfckecBNXLrQ_6Mgrq_sQ
 // analog zur Fenstertitel-Versionsanzeige der Windows-App (kiosk/__version__.py).
 // Bei sichtbaren Aenderungen an der Tablet-App bitte erhoehen (z.B. 1.1.0
 // fuer neue Funktionen, 1.0.1 fuer reine Bugfixes).
-export const APP_VERSION = "1.23.1";
+export const APP_VERSION = "1.24.0";
 
 // Kategorien und Vorschlagswert fuer den MwSt.-Satz beim Anlegen eines
 // Produkts (Runde 43, Produktverwaltung auf dem Tablet) - identisch zu
@@ -56,6 +56,13 @@ export const SCHIEDSRICHTER_WASSER_MEDIUM_PRODUKT_ID = "a018c117-f967-44b0-955a-
 // Auszahlungs-Tabelle - es wird direkt eine Korrektur-Lagerbewegung
 // gebucht, ganz ohne Kassiervorgang.
 export const KAFFEE_TRAINER_PRODUKT_ID = "e6f29dd2-2c17-4ca1-a418-bb36365bd703";
+
+// Runde 51: feste ID des bereits bestehenden, aktiven Produkts "Tee"
+// (Kategorie Getraenk, VK 1,50 €, MwSt 19%, kein Pfand), fuer den
+// kostenlosen "Tee für Trainer"-Knopf im Reiter "Verkauf" (Feedback-Wunsch
+// "Tee Trainer button"). Wie bei KAFFEE_TRAINER_PRODUKT_ID wird eine reine
+// Korrektur-Lagerbewegung gebucht, ohne eigene Auszahlungs-Tabelle.
+export const TEE_TRAINER_PRODUKT_ID = "9a8df04f-b9b6-45f8-ab1f-74b3d461cc5d";
 
 // Wie am Rechner: die Kassen, zwischen denen umgeschaltet werden kann.
 export const VERANSTALTUNGEN = ["Jugend", "Senioren"];

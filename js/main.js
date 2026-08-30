@@ -11,6 +11,7 @@ import {
   SCHIEDSRICHTER_WASSER_STILL_PRODUKT_ID,
   SCHIEDSRICHTER_WASSER_MEDIUM_PRODUKT_ID,
   KAFFEE_TRAINER_PRODUKT_ID,
+  TEE_TRAINER_PRODUKT_ID,
   VERANSTALTUNGEN,
   MWST_SAETZE,
 } from "./config.js";
@@ -112,6 +113,7 @@ const katBtnSpeise = el("kat-btn-Speise");
 const helferpreisBtn = el("helferpreis-btn");
 const pfandRueckgabeBtn = el("pfand-rueckgabe-btn");
 const kaffeeTrainerBtn = el("kaffee-trainer-btn");
+const teeTrainerBtn = el("tee-trainer-btn");
 const warenkorbListe = el("warenkorb-liste");
 const summeEl = el("summe");
 const bezahlenBtn = el("bezahlen-btn");
@@ -1042,10 +1044,10 @@ async function pfandRueckgabeKlick() {
 // Anders als bei den Schiedsrichter-Wasser-Knoepfen gibt es hier keine
 // eigene Auszahlungs-Tabelle (kein Bargeld-Bezug), daher direkter Aufruf
 // von lagerbewegungErfassen() statt ueber schiedsrichterAuszahlungErfassen.
-async function kaffeeFuerTrainerAusgeben() {
+async function trainerAusgabeAusgeben(produktId, bezeichnung) {
   const bestaetigt = await zeigeBestaetigung(
-    "Kaffee kostenlos ausgeben?",
-    "1x Kaffee kostenlos an einen Trainer ausgeben?"
+    `${bezeichnung} kostenlos ausgeben?`,
+    `1x ${bezeichnung} kostenlos an einen Trainer ausgeben?`
   );
   if (!bestaetigt) return;
 
@@ -1053,7 +1055,7 @@ async function kaffeeFuerTrainerAusgeben() {
   const gid = await geraetId();
   try {
     await repo.lagerbewegungErfassen(
-      KAFFEE_TRAINER_PRODUKT_ID,
+      produktId,
       "Korrektur",
       -1,
       "Kostenlose Ausgabe an Trainer",
@@ -1064,7 +1066,10 @@ async function kaffeeFuerTrainerAusgeben() {
     zeigeHinweis("Fehler beim Buchen", exc.message ?? String(exc));
     return;
   }
-  zeigeHinweis("Kaffee ausgegeben", "1x Kaffee wurde kostenlos an einen Trainer ausgegeben.");
+  zeigeHinweis(
+    `${bezeichnung} ausgegeben`,
+    `1x ${bezeichnung} wurde kostenlos an einen Trainer ausgegeben.`
+  );
   if (aktuelleAnsicht === "warenwirtschaft") renderWarenwirtschaft();
 }
 
@@ -3521,8 +3526,15 @@ function wireEvents() {
   // Pfandrückgabe (siehe pfandRueckgabeKlick).
   pfandRueckgabeBtn.onclick = () => pfandRueckgabeKlick();
 
-  // Runde 44: "Kaffee für Trainer" - siehe kaffeeFuerTrainerAusgeben().
-  kaffeeTrainerBtn.onclick = einmalig(kaffeeTrainerBtn, () => kaffeeFuerTrainerAusgeben());
+  // Runde 44: "Kaffee für Trainer" - siehe trainerAusgabeAusgeben().
+  kaffeeTrainerBtn.onclick = einmalig(kaffeeTrainerBtn, () =>
+    trainerAusgabeAusgeben(KAFFEE_TRAINER_PRODUKT_ID, "Kaffee")
+  );
+
+  // Runde 51: "Tee für Trainer" - siehe trainerAusgabeAusgeben().
+  teeTrainerBtn.onclick = einmalig(teeTrainerBtn, () =>
+    trainerAusgabeAusgeben(TEE_TRAINER_PRODUKT_ID, "Tee")
+  );
 
   bezahlenBtn.onclick = bezahlenOeffnen;
   bezahlenAbbrechenBtn.onclick = bezahlenSchliessen;
