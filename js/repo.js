@@ -923,13 +923,19 @@ export async function lieferantenPfandStornieren(eintragId, benutzerName, kommen
       synced: false,
       synced_at: null,
     });
+    // Runde 5 Schritt 5.1: Stornierung als negativer Wareneingang buchen
+    // (nicht als Korrektur), damit Wareneinkauf und Vorsteuer korrekt sinken.
+    // Mit denselben Preisangaben wie die Originalposition, sodass sich beide
+    // aufheben (negative Menge x Einkaufspreis = Gegenbuchung).
     await lagerbewegungErfassen(
       position.produkt_id,
-      "Korrektur",
+      "Wareneingang",
       -position.menge,
       stornoKommentar,
       benutzerName,
-      gid
+      gid,
+      position.einzelpreis,
+      position.mwst_satz
     );
   }
   return stornoId;
