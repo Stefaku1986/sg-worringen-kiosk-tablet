@@ -19,7 +19,7 @@
 
 import { getAll, get, put, geraetId, jetzt, neueId } from "./db.js";
 import { GERAET_NAME, PFAND_RUECKGABE_PRODUKT_ID, VERANSTALTUNGEN, MWST_SAETZE } from "./config.js";
-import { rund2, mwstBetrag } from "./format.js";
+import { rund2, mwstBetrag, lokalerMonat } from "./format.js";
 import { pinPruefen, pinHashen } from "./auth.js";
 
 // ---------------------------------------------------------------------
@@ -1468,7 +1468,7 @@ export async function abschreibungenBericht(jahr, monat) {
   const produkte = await getAll("produkte");
   const produktJeId = Object.fromEntries(produkte.map((p) => [p.id, p]));
   const zeilen = alle.filter(
-    (l) => l.ist_abschreibung && l.datum.slice(0, 7) === monatStr
+    (l) => l.ist_abschreibung && lokalerMonat(l.datum) === monatStr
   );
   const zwischenstand = {};
   for (const l of zeilen) {
@@ -1606,7 +1606,7 @@ async function positionenMitKasse(monatFilter = null) {
     .map((p) => {
       const vorgang = vorgangJeId[p.vorgang_id];
       if (!vorgang) return null;
-      if (monatFilter && vorgang.datum.slice(0, 7) !== monatFilter) return null;
+      if (monatFilter && lokalerMonat(vorgang.datum) !== monatFilter) return null;
       return { ...p, veranstaltung: vorgang.veranstaltung, produkt: produktJeId[p.produkt_id] };
     })
     .filter(Boolean);
@@ -1827,7 +1827,7 @@ export async function lieferantenPfandGesamt() {
 export async function lieferantenPfandMonat(jahr, monat) {
   const monatStr = `${String(jahr).padStart(4, "0")}-${String(monat).padStart(2, "0")}`;
   const alle = await getAll("lieferanten_pfand");
-  const zeilen = alle.filter((e) => e.datum.slice(0, 7) === monatStr);
+  const zeilen = alle.filter((e) => lokalerMonat(e.datum) === monatStr);
   const bezahlt = rund2(zeilen.reduce((s, e) => s + e.bezahlt, 0));
   const erhalten = rund2(zeilen.reduce((s, e) => s + e.erhalten, 0));
   return { bezahlt, erhalten, saldo: rund2(bezahlt - erhalten) };
@@ -1844,7 +1844,7 @@ export async function verkaeufeJeProdukt(jahr, monat) {
   for (const p of alle) {
     if (p.ist_pfandrueckgabe) continue;
     const vorgang = vorgangJeId[p.vorgang_id];
-    if (!vorgang || vorgang.datum.slice(0, 7) !== monatStr) continue;
+    if (!vorgang || lokalerMonat(vorgang.datum) !== monatStr) continue;
     const produkt = produktJeId[p.produkt_id];
     const schluessel = `${vorgang.veranstaltung}::${p.produkt_id}`;
     const eintrag = gruppen[schluessel] || {
@@ -1867,7 +1867,7 @@ export async function wareneinkaufBericht(jahr, monat) {
   const produktJeId = Object.fromEntries(produkte.map((p) => [p.id, p]));
   const gruppen = {};
   for (const l of alle) {
-    if (l.typ !== "Wareneingang" || l.datum.slice(0, 7) !== monatStr) continue;
+    if (l.typ !== "Wareneingang" || lokalerMonat(l.datum) !== monatStr) continue;
     const produkt = produktJeId[l.produkt_id];
     if (!produkt) continue;
     const eintrag = gruppen[l.produkt_id] || {
@@ -1936,7 +1936,7 @@ export async function monatsabrechnung(jahr, monat) {
 
   const kassenstuerzeAlle = await getAll("kassenstuerze");
   const kassensturzHistorie = kassenstuerzeAlle
-    .filter((k) => k.datum.slice(0, 7) === monatStr)
+    .filter((k) => lokalerMonat(k.datum) === monatStr)
     .sort((a, b) => (a.datum < b.datum ? -1 : 1));
 
   const entnahmeJeKasse = {};
@@ -1957,7 +1957,7 @@ export async function monatsabrechnung(jahr, monat) {
   const sonstigeAusgabenJeKasseM = await summeMonat(ausgabenAlle, monatStr);
   const schiedsrichterJeKasse = await summeMonat(schiedsrichterAlle, monatStr);
   const bargeldEntnahmenGebucht = entnahmenAlle
-    .filter((e) => e.datum.slice(0, 7) === monatStr)
+    .filter((e) => lokalerMonat(e.datum) === monatStr)
     .sort((a, b) => (a.datum < b.datum ? -1 : 1));
 
   const verkaeufe = await verkaeufeJeProdukt(jahr, monat);
@@ -2037,7 +2037,7 @@ async function summeMonat(zeilen, monatStr) {
   const ergebnis = {};
   for (const v of VERANSTALTUNGEN) ergebnis[v] = 0;
   for (const z of zeilen) {
-    if (z.datum.slice(0, 7) !== monatStr) continue;
+    if (lokalerMonat(z.datum) !== monatStr) continue;
     if (!(z.veranstaltung in ergebnis)) continue;
     ergebnis[z.veranstaltung] = rund2(ergebnis[z.veranstaltung] + z.betrag);
   }

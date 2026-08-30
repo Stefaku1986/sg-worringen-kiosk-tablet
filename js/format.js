@@ -44,3 +44,15 @@ export function nettoPreisGenau(bruttoPreis, mwstSatz, stellen = 4) {
   const netto = (bruttoPreis * 100) / (100 + mwstSatz);
   return Math.round((netto + Number.EPSILON) * faktor) / faktor;
 }
+
+// Etappe 5.6: Ein Monat ist ein Begriff der ORTSZEIT, nicht der UTC-Zeit.
+// datum.slice(0, 7) las die ersten Zeichen des UTC-Zeitstempels - eine
+// Buchung am 31.08. um 22:30 UTC gehoert aber lokal (UTC+2) schon zum
+// 1. September und damit in die September-Abrechnung. Diese Funktion
+// extrahiert den lokalen Monat aus einem ISO-Zeitstempel.
+export function lokalerMonat(isoDatum) {
+  if (!isoDatum) return "";
+  const d = new Date(isoDatum);
+  if (Number.isNaN(d.getTime())) return "";
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
