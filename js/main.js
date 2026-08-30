@@ -343,6 +343,13 @@ let nachbestellungPositionen = []; // {produktId, name, menge, einzelpreis (nett
 let helferpreisAktiv = false;
 let angemeldeterKandidat = null; // Benutzer, dessen PIN gerade eingegeben wird
 let pinEingabe = "";
+// Etappe 4, Schritt 4.6: Wartezeit nach 5 falschen PIN-Eingaben.
+// Zähler pro Benutzer (benutzer.id -> Anzahl Fehlversuche).
+// Nach 5 Fehlversuchen: 30 Sekunden Sperre mit Countdown.
+// Der Zähler lebt nur im RAM; nach Neustart ist er weg.
+let pinFehlverstucheCounter = {}; // benutzer_id -> Anzahl Fehlversuche
+let pinTimeoutInterval = null; // Interval-ID für den Countdown
+let pinTimeoutSekunden = 0; // Sekunden, die noch übrig sind
 let aktuelleAnsicht = "login"; // 'login' | 'verkauf' | 'storno' | 'kassensturz' | 'schiedsrichter' | 'einzahlen' | 'ausgaben' | 'entnahmen' | 'nachbestellung' | 'termine'
 let letzterKassensturzSoll = 0;
 let vorgaengeCache = []; // fuer Storno-Ansicht
@@ -625,19 +632,55 @@ function pinEingabeZeigen(benutzer) {
   pinNameLabel.textContent = `PIN für ${benutzer.name}`;
   pinFehler.textContent = "";
   aktualisierePinAnzeige();
+  // Zähler für diesen Benutzer zurücksetzen, Timer stoppen
+  pinFehlverstucheCounter[benutzer.id] = 0;
+  pinTimeoutStoppen();
   loginNutzerauswahl.style.display = "none";
   loginPinEingabe.style.display = "";
 }
 
 function pinEingabeVerlassen() {
+  if (angemeldeterKandidat) {
+    pinFehlverstucheCounter[angemeldeterKandidat.id] = 0;
+  }
   angemeldeterKandidat = null;
   pinEingabe = "";
+  pinTimeoutStoppen();
   loginNutzerauswahl.style.display = "";
   loginPinEingabe.style.display = "none";
 }
 
 function aktualisierePinAnzeige() {
   pinAnzeige.textContent = pinEingabe.length ? "●".repeat(pinEingabe.length) : "–";
+}
+
+// Etappe 4, Schritt 4.6: Wartezeit nach 5 falschen PIN-Eingaben
+function pinTimeoutStarten() {
+  // Startet den 30-Sekunden-Countdown nach dem 5. Fehlversuch
+  pinTimeoutStoppen(); // Sicherstellen, dass kein alter Interval läuft
+  pinTimeoutSekunden = 30;
+  pinTimeoutInterval = setInterval(() => {
+    pinTimeoutSekunden -= 1;
+    if (pinTimeoutSekunden > 0) {
+      pinFehler.textContent = `Zu viele Fehlversuche. Bitte noch ${pinTimeoutSekunden} Sekunden warten.`;
+    } else {
+      // Sperre abgelaufen: Zähler zurücksetzen, Interval stoppen
+      pinTimeoutStoppen();
+      pinFehler.textContent = "";
+      if (angemeldeterKandidat) {
+        pinFehlverstucheCounter[angemeldeterKandidat.id] = 0;
+      }
+    }
+  }, 1000); // Jede Sekunde aufrufen
+}
+
+function pinTimeoutStoppen() {
+  // Stoppt den laufenden Countdown-Interval
+  if (pinTimeoutInterval !== null) {
+    clearInterval(pinTimeoutInterval);
+    pinTimeoutInterval = null;
+    pinTimeoutSekunden = 0;
+  }
 }
 
 // Tastatur-Aufbau (0-9, Loeschen, OK). Wie bei der Windows-App wichtig:
@@ -654,6 +697,10 @@ function renderTastatur() {
     btn.tabIndex = -1; // kein Tastatur-Fokus - Pendant zu Qt.NoFocus
     if (taste === "OK") btn.classList.add("ok");
     btn.addEventListener("click", () => {
+      // Wenn Sperre läuft: keine Eingaben verarbeiten
+      if (pinTimeoutInterval !== null) {
+        return;
+      }
       if (taste === "⌫") {
         pinEingabe = pinEingabe.slice(0, -1);
         aktualisierePinAnzeige();
@@ -671,13 +718,31 @@ function renderTastatur() {
 
 async function pinBestaetigen() {
   if (!angemeldeterKandidat || !pinEingabe.length) return;
+  // Wenn Sperre läuft: nichts tun
+  if (pinTimeoutInterval !== null) {
+    return;
+  }
   const benutzer = await repo.benutzerAnmelden(angemeldeterKandidat.id, pinEingabe);
   if (!benutzer) {
-    pinFehler.textContent = "Falscher PIN. Bitte erneut versuchen.";
+    // PIN falsch: Zähler erhöhen
+    const benutzerId = angemeldeterKandidat.id;
+    if (!(benutzerId in pinFehlverstucheCounter)) {
+      pinFehlverstucheCounter[benutzerId] = 0;
+    }
+    pinFehlverstucheCounter[benutzerId] += 1;
+
+    if (pinFehlverstucheCounter[benutzerId] >= 5) {
+      // 5 Fehler erreicht: 30 Sekunden sperren
+      pinTimeoutStarten();
+    } else {
+      pinFehler.textContent = "Falscher PIN. Bitte erneut versuchen.";
+    }
     pinEingabe = "";
     aktualisierePinAnzeige();
     return;
   }
+  // PIN korrekt: Zähler zurücksetzen
+  pinFehlverstucheCounter[angemeldeterKandidat.id] = 0;
   session.anmelden(benutzer);
   pinEingabe = "";
   angemeldeterKandidat = null;
@@ -761,6 +826,17 @@ function abmelden() {
 // exakte Ursache des gemeldeten "Numpad nimmt keine Zahlen an".
 document.addEventListener("keydown", (ev) => {
   if (loginPinEingabe.style.display === "none") return;
+  // Wenn Sperre läuft: keine Eingaben verarbeiten
+  if (pinTimeoutInterval !== null) {
+    if (ev.key >= "0" && ev.key <= "9") {
+      ev.preventDefault();
+    } else if (ev.key === "Backspace") {
+      ev.preventDefault();
+    } else if (ev.key === "Enter") {
+      ev.preventDefault();
+    }
+    return;
+  }
   if (ev.key >= "0" && ev.key <= "9") {
     if (pinEingabe.length < 8) {
       pinEingabe += ev.key;
