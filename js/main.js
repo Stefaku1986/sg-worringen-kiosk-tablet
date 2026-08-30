@@ -506,6 +506,22 @@ async function gebucht(was, fn) {
   }
 }
 
+// Runde 50, Etappe 7: Auf einer deutschen Tastatur wird ein Komma getippt.
+// Die Felder sind deshalb type="text" (bei type="number" liefert der Browser
+// bei "1,50" einen leeren Wert) - hier wird das Komma zum Punkt normalisiert,
+// bevor geparst wird. Leere Eingabe ergibt NaN wie bisher. Ein Tausenderpunkt
+// wird erkannt, wenn zusammen mit einem Komma vorhanden ("1.234,56") - dann
+// sind alle Punkte Tausenderpunkte und werden entfernt. Ohne Komma bleibt der
+// Punkt das Dezimaltrennzeichen ("1.50" -> 1.5; "1.234" -> 1.234).
+function betragLesen(feld) {
+  const roh = (feld?.value ?? "").trim();
+  // Enthaelt die Eingabe ein Komma, ist es das Dezimaltrennzeichen - alle
+  // Punkte sind dann Tausenderpunkte und muessen weg ("1.234,56" -> 1234.56).
+  // Ohne Komma bleibt der Punkt das Dezimaltrennzeichen ("1.50" -> 1.5).
+  const norm = roh.includes(",") ? roh.replace(/\./g, "").replace(",", ".") : roh;
+  return norm === "" ? NaN : parseFloat(norm);
+}
+
 // ---------------------------------------------------------------------
 // Hilfe-Dialog (statische Kurzanleitung, siehe index.html #hilfe-overlay)
 // ---------------------------------------------------------------------
@@ -802,7 +818,17 @@ function nachAnmeldungAnzeigen() {
   pruefeKassenvorschlag();
 }
 
-function abmelden() {
+async function abmelden() {
+  // Runde 50, Etappe 7: Bestätigung vor dem Abmelden, mit Warnung vor Warenkorb-Verlust
+  let bestaetigung = false;
+  if (warenkorb.length > 0) {
+    const text = `Willst du dich wirklich abmelden? Die aktuelle Buchung mit ${warenkorb.length} Position${warenkorb.length === 1 ? "" : "en"} wird verworfen.`;
+    bestaetigung = await zeigeBestaetigung("Abmelden", text, "Abmelden");
+  } else {
+    bestaetigung = await zeigeBestaetigung("Abmelden", "Willst du dich wirklich abmelden?", "Abmelden");
+  }
+  if (!bestaetigung) return;
+
   session.abmelden();
   warenkorb = [];
   nachbestellungPositionen = [];
@@ -1147,7 +1173,7 @@ function bezahlenSchliessen() {
 }
 
 function bezahlenGegebenGeaendert() {
-  const gegeben = parseFloat(gegebenFeld.value);
+  const gegeben = betragLesen(gegebenFeld);
   if (isNaN(gegeben)) {
     rueckgeldAnzeige.textContent = "";
     bezahlenBestaetigenBtn.disabled = true;
@@ -1160,7 +1186,7 @@ function bezahlenGegebenGeaendert() {
 }
 
 async function bezahlenBestaetigen() {
-  const gegeben = parseFloat(gegebenFeld.value);
+  const gegeben = betragLesen(gegebenFeld);
   if (isNaN(gegeben)) return;
   const benutzer = session.getAktuellerBenutzer();
   try {
@@ -1304,7 +1330,7 @@ function ksAktuellesSollGesamt() {
   let soll = 0;
   for (const k of ksLetzteVorschauGesamt.kassen) {
     const feld = ksAnfangsbestandOverrideFelder[k.veranstaltung];
-    const anfangsbestand = feld ? parseFloat(feld.value) || 0 : k.anfangsbestand;
+    const anfangsbestand = feld ? betragLesen(feld) || 0 : k.anfangsbestand;
     soll += anfangsbestand + k.einnahmen - k.auszahlungen - k.sonstigeAusgaben
       + k.einzahlungen - k.entnahmen;
   }
@@ -1318,7 +1344,7 @@ function ksAnfangsbestandOverrideGeaendert() {
 }
 
 function ksGezaehltGeaendert() {
-  const gezaehlt = parseFloat(ksGezaehltFeld.value);
+  const gezaehlt = betragLesen(ksGezaehltFeld);
   if (isNaN(gezaehlt)) {
     ksDifferenz.textContent = "";
     return;
@@ -1329,7 +1355,7 @@ function ksGezaehltGeaendert() {
 }
 
 async function ksSpeichern() {
-  const gezaehlt = parseFloat(ksGezaehltFeld.value);
+  const gezaehlt = betragLesen(ksGezaehltFeld);
   if (isNaN(gezaehlt)) {
     zeigeHinweis("Fehlende Angabe", "Bitte den tatsächlich gezählten Betrag eingeben.");
     return;
@@ -1342,7 +1368,7 @@ async function ksSpeichern() {
   const benutzer = session.getAktuellerBenutzer();
   const overrides = {};
   for (const [veranstaltung, feld] of Object.entries(ksAnfangsbestandOverrideFelder)) {
-    const wert = parseFloat(feld.value);
+    const wert = betragLesen(feld);
     overrides[veranstaltung] = isNaN(wert) ? 0 : wert;
   }
   // Runde 47, Etappe 3.2: Fehlerbehandlung fuer Kassensturz-Speichern - die
@@ -1392,7 +1418,7 @@ function ksEntnahmeUeberspringen() {
 }
 
 async function ksEntnahmeSpeichern() {
-  const betrag = parseFloat(ksEntnahmeBetragFeld.value);
+  const betrag = betragLesen(ksEntnahmeBetragFeld);
   if (isNaN(betrag) || betrag <= 0) {
     ksEntnahmeFehler.textContent = "Bitte einen gültigen Betrag größer als 0 eingeben.";
     return;
@@ -1538,7 +1564,7 @@ async function renderSchiedsrichter() {
 }
 
 async function schiedsrichterAuszahlen() {
-  const betrag = parseFloat(srBetragFeld.value);
+  const betrag = betragLesen(srBetragFeld);
   if (isNaN(betrag) || betrag <= 0) {
     srFehler.textContent = "Bitte einen gültigen Betrag größer als 0 eingeben.";
     return;
@@ -1654,7 +1680,7 @@ async function renderEinzahlungen() {
 }
 
 async function bargeldEinzahlen() {
-  const betrag = parseFloat(ezBetragFeld.value);
+  const betrag = betragLesen(ezBetragFeld);
   if (isNaN(betrag) || betrag <= 0) {
     ezFehler.textContent = "Bitte einen gültigen Betrag größer als 0 eingeben.";
     return;
@@ -1740,7 +1766,7 @@ async function renderAusgaben() {
 }
 
 async function ausgabeErfassen() {
-  const betrag = parseFloat(saBetragFeld.value);
+  const betrag = betragLesen(saBetragFeld);
   if (isNaN(betrag) || betrag <= 0) {
     saFehler.textContent = "Bitte einen gültigen Betrag größer als 0 eingeben.";
     return;
@@ -1829,7 +1855,7 @@ async function renderEntnahmen() {
 }
 
 async function entnahmeErfassen() {
-  const betrag = parseFloat(beBetragFeld.value);
+  const betrag = betragLesen(beBetragFeld);
   if (isNaN(betrag) || betrag <= 0) {
     beFehler.textContent = "Bitte einen gültigen Betrag größer als 0 eingeben.";
     return;
@@ -1932,13 +1958,13 @@ function nachbestellungPositionHinzufuegen() {
   const produktId = npProduktAuswahl.value;
   const produkt = produkteCache.find((p) => p.id === produktId);
   if (!produkt) return;
-  const menge = Math.max(1, Math.round(parseFloat(npProduktMengeFeld.value) || 1));
+  const menge = Math.max(1, Math.round(betragLesen(npProduktMengeFeld) || 1));
   // Runde 45: der eingegebene Betrag kann laut Auswahl entweder pro Stueck
   // oder fuer die gesamte Position gemeint sein - gespeichert wird immer
   // der Preis pro Stueck. Ohne diese Umschaltung wurde ein eingetippter
   // Rechnungsbetrag mit der Menge multipliziert (120 Flaschen x 90,34 € =
   // 10.840,80 € statt 107,50 €).
-  const eingabeBetrag = parseFloat(npProduktPreisFeld.value) || 0;
+  const eingabeBetrag = betragLesen(npProduktPreisFeld) || 0;
   const preisBrutto =
     npProduktPreisartAuswahl.value === "gesamt" && eingabeBetrag > 0
       ? eingabeBetrag / menge
@@ -1948,8 +1974,8 @@ function nachbestellungPositionHinzufuegen() {
   // Pfand pro Stueck (Runde 32) - wie beim Preis wird nur der Wert pro
   // Stueck gespeichert, die Hochrechnung mit der Menge passiert erst beim
   // Anzeigen bzw. beim Speichern (siehe nachbestellungErfassen).
-  const pfandBezahlt = parseFloat(npProduktPfandBezahltFeld.value) || 0;
-  const pfandErhalten = parseFloat(npProduktPfandErhaltenFeld.value) || 0;
+  const pfandBezahlt = betragLesen(npProduktPfandBezahltFeld) || 0;
+  const pfandErhalten = betragLesen(npProduktPfandErhaltenFeld) || 0;
   nachbestellungPositionen.push({
     produktId,
     name: produkt.name,
@@ -2055,8 +2081,8 @@ async function nachbestellungErfassen() {
   // repo.lieferantenPfandErfassen uebergebene Gesamtbetrag bleibt dadurch
   // vollstaendig, unabhaengig davon, ob das Pfand pro Produkt oder als ein
   // Gesamtbetrag erfasst wurde (Runde 32, analog zur Windows-App).
-  let bezahlt = parseFloat(npBezahltFeld.value) || 0;
-  let erhalten = parseFloat(npErhaltenFeld.value) || 0;
+  let bezahlt = betragLesen(npBezahltFeld) || 0;
+  let erhalten = betragLesen(npErhaltenFeld) || 0;
   for (const p of nachbestellungPositionen) {
     bezahlt += (p.pfandBezahlt || 0) * p.menge;
     erhalten += (p.pfandErhalten || 0) * p.menge;
@@ -2531,7 +2557,7 @@ async function wareneingangErfassen() {
     return;
   }
   const einzelpreisWert = wwEinzelpreisFeld.value.trim();
-  const einzelpreis = wwModus === "Wareneingang" && einzelpreisWert !== "" ? parseFloat(einzelpreisWert) : null;
+  const einzelpreis = wwModus === "Wareneingang" && einzelpreisWert !== "" ? betragLesen(wwEinzelpreisFeld) : null;
   const mwstWert = wwMwstAuswahl.value;
   const mwstSatz = wwModus === "Wareneingang" && mwstWert !== "" ? parseFloat(mwstWert) : null;
 
@@ -2780,7 +2806,7 @@ async function renderPfandGewinnVerbuchungen() {
 
 async function pfandVerbuchen() {
   auPfandFehler.textContent = "";
-  const betrag = parseFloat(auPfandBetragFeld.value);
+  const betrag = betragLesen(auPfandBetragFeld);
   if (isNaN(betrag) || betrag <= 0) {
     auPfandFehler.textContent = "Bitte einen gültigen Betrag größer als 0 eingeben.";
     return;
@@ -2958,15 +2984,15 @@ async function produktAnlegenHandler() {
     adPFehler.textContent = "Bitte einen Namen eingeben.";
     return;
   }
-  const verkaufspreis = parseFloat(adPVerkaufFeld.value);
+  const verkaufspreis = betragLesen(adPVerkaufFeld);
   if (isNaN(verkaufspreis) || verkaufspreis < 0) {
     adPFehler.textContent = "Bitte einen gültigen Verkaufspreis eingeben.";
     return;
   }
-  const einkaufspreis = parseFloat(adPEinkaufFeld.value) || 0;
+  const einkaufspreis = betragLesen(adPEinkaufFeld) || 0;
   const helferpreisWert = adPHelferpreisFeld.value.trim();
-  const helferpreis = helferpreisWert === "" ? null : parseFloat(helferpreisWert);
-  const pfandBetrag = parseFloat(adPPfandFeld.value) || 0;
+  const helferpreis = helferpreisWert === "" ? null : betragLesen(adPHelferpreisFeld);
+  const pfandBetrag = betragLesen(adPPfandFeld) || 0;
   const benutzer = session.getAktuellerBenutzer();
   try {
     await repo.produktAnlegen(
@@ -3019,15 +3045,15 @@ async function produktBearbeitenSpeichern() {
     pbFehler.textContent = "Bitte einen Namen eingeben.";
     return;
   }
-  const verkaufspreis = parseFloat(pbVerkaufFeld.value);
+  const verkaufspreis = betragLesen(pbVerkaufFeld);
   if (isNaN(verkaufspreis) || verkaufspreis < 0) {
     pbFehler.textContent = "Bitte einen gültigen Verkaufspreis eingeben.";
     return;
   }
-  const einkaufspreis = parseFloat(pbEinkaufFeld.value) || 0;
+  const einkaufspreis = betragLesen(pbEinkaufFeld) || 0;
   const helferpreisWert = pbHelferpreisFeld.value.trim();
-  const helferpreis = helferpreisWert === "" ? null : parseFloat(helferpreisWert);
-  const pfandBetrag = parseFloat(pbPfandFeld.value) || 0;
+  const helferpreis = helferpreisWert === "" ? null : betragLesen(pbHelferpreisFeld);
+  const pfandBetrag = betragLesen(pbPfandFeld) || 0;
   try {
     await repo.produktAktualisieren(
       bearbeitenProduktId,
