@@ -317,6 +317,7 @@ const bezahlenOverlay = el("bezahlen-overlay");
 const bezahlenSumme = el("bezahlen-summe");
 const gegebenFeld = el("gegeben-feld");
 const rueckgeldAnzeige = el("rueckgeld-anzeige");
+const gegebenLabel = el("gegeben-label");
 const bezahlenAbbrechenBtn = el("bezahlen-abbrechen-btn");
 const bezahlenBestaetigenBtn = el("bezahlen-bestaetigen-btn");
 
@@ -1160,12 +1161,40 @@ function warenkorbSumme() {
 
 function bezahlenOeffnen() {
   if (!warenkorb.length) return;
-  bezahlenSumme.textContent = euro(warenkorbSumme());
-  gegebenFeld.value = "";
-  rueckgeldAnzeige.textContent = "";
-  bezahlenBestaetigenBtn.disabled = true;
+  const summe = warenkorbSumme();
+  bezahlenSumme.textContent = euro(summe);
+
+  if (summe <= 0) {
+    // Gibt ein Kunde nur Pfand zurueck, ist die Summe negativ. Nach
+    // "Gegeben" zu fragen ergibt dann keinen Sinn - es gibt nichts zu
+    // geben, und der Knopf blieb gesperrt, bis jemand eine 0 eintippte
+    // (Fehlerbericht aus dem Verkaufsraum, Runde 51).
+    gegebenFeld.style.display = "none";
+    gegebenLabel.style.display = "none";
+    gegebenFeld.value = "";
+
+    if (summe < 0) {
+      rueckgeldAnzeige.textContent = `Auszahlung an den Kunden: ${euro(-summe)}`;
+      rueckgeldAnzeige.style.color = "var(--rot)";
+    } else {
+      rueckgeldAnzeige.textContent = "Es ist nichts zu zahlen.";
+      rueckgeldAnzeige.style.color = "";
+    }
+
+    bezahlenBestaetigenBtn.disabled = false;
+  } else {
+    // Zuruecksetzen ist Pflicht: ohne diese beiden Zeilen bliebe das
+    // Feld nach einer Pfandrueckgabe auch beim naechsten Verkauf
+    // unsichtbar (Runde 51).
+    gegebenFeld.style.display = "";
+    gegebenLabel.style.display = "";
+    gegebenFeld.value = "";
+    rueckgeldAnzeige.textContent = "";
+    bezahlenBestaetigenBtn.disabled = true;
+    gegebenFeld.focus();
+  }
+
   bezahlenOverlay.classList.remove("versteckt");
-  gegebenFeld.focus();
 }
 
 function bezahlenSchliessen() {
@@ -1173,20 +1202,30 @@ function bezahlenSchliessen() {
 }
 
 function bezahlenGegebenGeaendert() {
+  const summe = warenkorbSumme();
+
+  // Gibt es nichts zu zahlen, darf das unsichtbare Feld nicht
+  // verarbeitet werden - sonst wuerde versehentliche alte Eingabe die
+  // Anzeige ueberschreiben (Runde 51).
+  if (summe <= 0) return;
+
   const gegeben = betragLesen(gegebenFeld);
   if (isNaN(gegeben)) {
     rueckgeldAnzeige.textContent = "";
     bezahlenBestaetigenBtn.disabled = true;
     return;
   }
-  const rueckgeld = rund2(gegeben - warenkorbSumme());
+  const rueckgeld = rund2(gegeben - summe);
   rueckgeldAnzeige.textContent = `Rückgeld: ${euro(rueckgeld)}`;
   rueckgeldAnzeige.style.color = rueckgeld < 0 ? "var(--rot)" : "var(--gruen)";
   bezahlenBestaetigenBtn.disabled = rueckgeld < 0;
 }
 
 async function bezahlenBestaetigen() {
-  const gegeben = betragLesen(gegebenFeld);
+  const summe = warenkorbSumme();
+  // Das ausgeblendete Feld ist leer, betragLesen() liefert dann NaN
+  // und der Vorgang wuerde stillschweigend abbrechen (Runde 51).
+  const gegeben = summe <= 0 ? 0 : betragLesen(gegebenFeld);
   if (isNaN(gegeben)) return;
   const benutzer = session.getAktuellerBenutzer();
   try {

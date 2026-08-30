@@ -7,7 +7,7 @@
 // Sync-Versuch bei fehlendem Internet ganz normal fehlschlaegt und beim
 // naechsten Mal automatisch nachgeholt wird (siehe sync.js).
 
-const CACHE_NAME = "sg-worringen-kiosk-tablet-v37";
+const CACHE_NAME = "sg-worringen-kiosk-tablet-v38";
 
 const APP_SHELL = [
   "./",
