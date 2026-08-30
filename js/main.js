@@ -472,6 +472,33 @@ function zeigeBestaetigung(titel, text, jaText = "Ja") {
   });
 }
 
+// Runde 47, Etappe 3.2 (Pruefbericht A6/B9): Fehlerbehandlung fuer
+// Buchungsvorgaenge - eindeutiger Fehler-Marker. Ein erfolgreicher Aufruf
+// kann jeden Wert liefern (undefined, null, 0, false, ""), deshalb brauchen
+// wir einen eindeutigen Fehler-Marker, um "Fehler" von "Erfolg mit Rückgabewert
+// undefined/falsy" zu unterscheiden.
+const FEHLGESCHLAGEN = Symbol("fehlgeschlagen");
+
+// Hilfsfunktion, um Fehler bei repo.*-Aufrufen sichtbar zu machen statt sie
+// still verschwinden zu lassen. Verpackt einen Buchungsaufruf (fn) mit
+// zeigeHinweis()-Fehlerbehandlung: Im Fehlerfall zeigt sie die Meldung an und
+// gibt FEHLGESCHLAGEN zurueck, damit die aufrufende Funktion via if-check
+// frueh enden kann, bevor Daten (Warenkorb, Formular) geloescht werden.
+// Das erledigt einmalig() auch im Fehlerfall, weil der finally-Block
+// immer laeuft.
+async function gebucht(was, fn) {
+  try {
+    return await fn();
+  } catch (exc) {
+    const msg = exc.message ?? String(exc);
+    zeigeHinweis(
+      `${was} – nicht gebucht`,
+      `${was} konnte nicht gebucht werden. Fehler: ${msg}`
+    );
+    return FEHLGESCHLAGEN;
+  }
+}
+
 // ---------------------------------------------------------------------
 // Hilfe-Dialog (statische Kurzanleitung, siehe index.html #hilfe-overlay)
 // ---------------------------------------------------------------------
@@ -1242,12 +1269,19 @@ async function ksSpeichern() {
     const wert = parseFloat(feld.value);
     overrides[veranstaltung] = isNaN(wert) ? 0 : wert;
   }
-  const ergebnis = await repo.kassensturzGesamtDurchfuehren(
-    gezaehlt,
-    naechsterStart,
-    overrides,
-    benutzer.name
+  // Runde 47, Etappe 3.2: Fehlerbehandlung fuer Kassensturz-Speichern - die
+  // kritischste Buchung im System. Wenn repo.kassensturzGesamtDurchfuehren()
+  // fehlschlaegt (IndexedDB voll, Netzwerkfehler), muss das sichtbar werden.
+  const ergebnis = await gebucht(
+    "Der Kassensturz",
+    () => repo.kassensturzGesamtDurchfuehren(
+      gezaehlt,
+      naechsterStart,
+      overrides,
+      benutzer.name
+    )
   );
+  if (ergebnis === FEHLGESCHLAGEN) return;  // Fehlerfall, Meldung wurde schon von gebucht() angezeigt
   const aufteilungText = ergebnis.kassen
     .map(
       (k) =>
@@ -2138,12 +2172,17 @@ function feedbackStatusSchliessen() {
 async function feedbackStatusSpeichern() {
   if (!feedbackBearbeitenId) return;
   const benutzer = session.getAktuellerBenutzer();
-  await repo.feedbackStatusSetzen(
-    feedbackBearbeitenId,
-    fbsStatusAuswahl.value,
-    fbsAntwortFeld.value,
-    benutzer.name
+  // Runde 47, Etappe 3.2: Fehlerbehandlung fuer Feedback-Status-Speichern.
+  const ergebnis = await gebucht(
+    "Der Feedback-Status",
+    () => repo.feedbackStatusSetzen(
+      feedbackBearbeitenId,
+      fbsStatusAuswahl.value,
+      fbsAntwortFeld.value,
+      benutzer.name
+    )
   );
+  if (ergebnis === FEHLGESCHLAGEN) return;  // Fehlerfall, Meldung wurde schon von gebucht() angezeigt
   feedbackStatusSchliessen();
   renderFeedback();
 }
