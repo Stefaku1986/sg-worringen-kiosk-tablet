@@ -1596,8 +1596,22 @@ async function schiedsrichterAuszahlen() {
 // "Pfand zurückgeben"-Knopf im Reiter "Verkauf"). Bucht eine kostenlose
 // Auszahlung (Betrag 0, ein Stück) inkl. automatischer Bestandskorrektur;
 // ueber die Uebersichtstabelle wie gewohnt stornierbar.
+// Etappe 7 (Politur): Rückfrage vor der kostenlosen Ausgabe, um versehentliche
+// Taps zu verhindern.
 async function schiedsrichterWasserAusgeben(produktId) {
   srFehler.textContent = "";
+
+  // Produktnamen finden, um ihn in der Rückfrage anzuzeigen
+  const produkt = produkteCache.find((p) => p.id === produktId);
+  const produktName = produkt ? produkt.name : `Produkt ${produktId}`;
+
+  // Rückfrage vor der kostenlosen Ausgabe
+  const bestaetigt = await zeigeBestaetigung(
+    "Wasser kostenlos ausgeben?",
+    `1x ${produktName} kostenlos an einen Schiedsrichter ausgeben?`
+  );
+  if (!bestaetigt) return;
+
   const benutzer = session.getAktuellerBenutzer();
   try {
     await repo.schiedsrichterAuszahlungErfassen(
