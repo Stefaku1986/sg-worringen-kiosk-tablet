@@ -1545,7 +1545,7 @@ function berechneGewinnPosition(einzelpreis, einkaufspreis, mwstSatz) {
 // repository.einkaufspreise_je_produkt. Fallback wie dort: ohne einen
 // einzigen preislich erfassten Wareneingang gilt der am Produkt
 // hinterlegte einkaufspreis, sonst 0.
-async function einkaufspreiseJeProdukt() {
+export async function einkaufspreiseJeProdukt() {
   const alle = await getAll("lagerbewegungen");
   const produkte = await getAll("produkte");
   const summen = {};

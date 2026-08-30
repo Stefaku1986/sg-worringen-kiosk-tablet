@@ -2498,8 +2498,7 @@ async function renderWarenwirtschaft() {
   }
 
   const bericht = await repo.warenbestandBericht();
-  const alleProdukte = await repo.listeProdukte(false);
-  const preisJeId = Object.fromEntries(alleProdukte.map((p) => [p.id, p.einkaufspreis || 0]));
+  const preisJeId = await repo.einkaufspreiseJeProdukt();
 
   wwBestandTabelleBody.innerHTML = "";
   for (const zeile of bericht) {
@@ -2523,8 +2522,7 @@ async function renderWarenwirtschaft() {
 
 async function bestandDrucken() {
   const bericht = await repo.warenbestandBericht();
-  const alleProdukte = await repo.listeProdukte(false);
-  const preisJeId = Object.fromEntries(alleProdukte.map((p) => [p.id, p.einkaufspreis || 0]));
+  const preisJeId = await repo.einkaufspreiseJeProdukt();
   let gesamtwert = 0;
   const zeilenHtml = bericht
     .map((z) => {
