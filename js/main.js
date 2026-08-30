@@ -365,10 +365,17 @@ function hinweisSchliessen() {
   hinweisOverlay.classList.add("versteckt");
 }
 
+// Runde 46: Aufloesung des gerade offenen Bestaetigungs-/Eingabe-Dialogs,
+// damit ein Tipp neben den Dialog (Backdrop) wie "Abbrechen" wirkt. Ohne
+// das bleibt das Promise fuer immer offen - und seit dem Doppeltipp-Schutz
+// (siehe einmalig()) zusaetzlich der ausloesende Knopf gesperrt.
+let hinweisAbbrechen = null;
+
 function zeigeHinweis(titel, text) {
   hinweisTitel.textContent = titel;
   hinweisText.textContent = text;
   hinweisAktionen.innerHTML = "";
+  hinweisAbbrechen = null;
   const okBtn = document.createElement("button");
   okBtn.id = "hinweis-ok-btn";
   okBtn.className = "btn btn-primaer";
@@ -401,10 +408,17 @@ function zeigeTextEingabe(titel, text, anfangswert = "") {
       feld.remove();
     };
 
+    hinweisAbbrechen = () => {
+      aufraeumen();
+      hinweisSchliessen();
+      resolve(null);
+    };
+
     const abbrechenBtn = document.createElement("button");
     abbrechenBtn.className = "btn";
     abbrechenBtn.textContent = "Abbrechen";
     abbrechenBtn.onclick = () => {
+      hinweisAbbrechen = null;
       aufraeumen();
       hinweisSchliessen();
       resolve(null);
@@ -413,6 +427,7 @@ function zeigeTextEingabe(titel, text, anfangswert = "") {
     okBtn.className = "btn btn-primaer";
     okBtn.textContent = "Speichern";
     okBtn.onclick = () => {
+      hinweisAbbrechen = null;
       const wert = feld.value;
       aufraeumen();
       hinweisSchliessen();
@@ -429,11 +444,16 @@ function zeigeBestaetigung(titel, text, jaText = "Ja") {
     hinweisTitel.textContent = titel;
     hinweisText.textContent = text;
     hinweisAktionen.innerHTML = "";
+    hinweisAbbrechen = () => {
+      hinweisSchliessen();
+      resolve(false);
+    };
     const abbrechenBtn = document.createElement("button");
     abbrechenBtn.id = "hinweis-abbrechen-btn";
     abbrechenBtn.className = "btn";
     abbrechenBtn.textContent = "Abbrechen";
     abbrechenBtn.onclick = () => {
+      hinweisAbbrechen = null;
       hinweisSchliessen();
       resolve(false);
     };
@@ -442,6 +462,7 @@ function zeigeBestaetigung(titel, text, jaText = "Ja") {
     jaBtn.className = "btn btn-primaer";
     jaBtn.textContent = jaText;
     jaBtn.onclick = () => {
+      hinweisAbbrechen = null;
       hinweisSchliessen();
       resolve(true);
     };
@@ -1002,7 +1023,10 @@ function renderWarenkorb() {
 }
 
 function warenkorbSumme() {
-  return warenkorb.reduce((s, z) => s + z.menge * (z.einzelpreis + (z.pfandBetrag || 0)), 0);
+  // Ohne Rundung ergibt eine Summe wie 1,10 + 2,20 intern 3.3000000000000003,
+  // wodurch ein passend gezahlter Betrag negatives Rueckgeld und damit einen
+  // gesperrten Bezahlen-Knopf erzeugt (Runde 46).
+  return rund2(warenkorb.reduce((s, z) => s + z.menge * (z.einzelpreis + (z.pfandBetrag || 0)), 0));
 }
 
 function bezahlenOeffnen() {
@@ -1026,7 +1050,7 @@ function bezahlenGegebenGeaendert() {
     bezahlenBestaetigenBtn.disabled = true;
     return;
   }
-  const rueckgeld = gegeben - warenkorbSumme();
+  const rueckgeld = rund2(gegeben - warenkorbSumme());
   rueckgeldAnzeige.textContent = `Rückgeld: ${euro(rueckgeld)}`;
   rueckgeldAnzeige.style.color = rueckgeld < 0 ? "var(--rot)" : "var(--gruen)";
   bezahlenBestaetigenBtn.disabled = rueckgeld < 0;
@@ -3208,6 +3232,23 @@ function beendenAusfuehren() {
 // Events verdrahten
 // ---------------------------------------------------------------------
 
+// Runde 46: schuetzt vor doppeltem Antippen. Auf dem Tablet loest ein
+// zweiter Tipp waehrend des Speicherns sonst eine zweite Buchung aus
+// (zwei Kassiervorgaenge mit demselben Warenkorb, zwei Kassenstuerze fuer
+// denselben Zeitraum). Der Knopf bleibt gesperrt, bis der Vorgang fertig
+// ist - auch wenn er mit einem Fehler endet (finally).
+function einmalig(btn, fn) {
+  return async (...args) => {
+    if (btn.disabled) return;
+    btn.disabled = true;
+    try {
+      await fn(...args);
+    } finally {
+      btn.disabled = false;
+    }
+  };
+}
+
 function wireEvents() {
   pinZurueckBtn.onclick = pinEingabeVerlassen;
   abmeldenBtn.onclick = abmelden;
@@ -3249,18 +3290,18 @@ function wireEvents() {
   tabWarenwirtschaft.onclick = () => zeigeHauptView("warenwirtschaft");
   tabAuswertung.onclick = () => zeigeHauptView("auswertung");
   tabAdmin.onclick = () => zeigeHauptView("admin");
-  srAuszahlenBtn.onclick = schiedsrichterAuszahlen;
-  srWasserStillBtn.onclick = () => schiedsrichterWasserAusgeben(SCHIEDSRICHTER_WASSER_STILL_PRODUKT_ID);
-  srWasserMediumBtn.onclick = () => schiedsrichterWasserAusgeben(SCHIEDSRICHTER_WASSER_MEDIUM_PRODUKT_ID);
-  ezEinzahlenBtn.onclick = bargeldEinzahlen;
-  saErfassenBtn.onclick = ausgabeErfassen;
-  beErfassenBtn.onclick = entnahmeErfassen;
+  srAuszahlenBtn.onclick = einmalig(srAuszahlenBtn, schiedsrichterAuszahlen);
+  srWasserStillBtn.onclick = einmalig(srWasserStillBtn, () => schiedsrichterWasserAusgeben(SCHIEDSRICHTER_WASSER_STILL_PRODUKT_ID));
+  srWasserMediumBtn.onclick = einmalig(srWasserMediumBtn, () => schiedsrichterWasserAusgeben(SCHIEDSRICHTER_WASSER_MEDIUM_PRODUKT_ID));
+  ezEinzahlenBtn.onclick = einmalig(ezEinzahlenBtn, bargeldEinzahlen);
+  saErfassenBtn.onclick = einmalig(saErfassenBtn, ausgabeErfassen);
+  beErfassenBtn.onclick = einmalig(beErfassenBtn, entnahmeErfassen);
   ksEntnahmeUeberspringenBtn.onclick = ksEntnahmeUeberspringen;
-  ksEntnahmeSpeichernBtn.onclick = ksEntnahmeSpeichern;
+  ksEntnahmeSpeichernBtn.onclick = einmalig(ksEntnahmeSpeichernBtn, ksEntnahmeSpeichern);
   npPositionHinzufuegenBtn.onclick = nachbestellungPositionHinzufuegen;
-  npErfassenBtn.onclick = nachbestellungErfassen;
-  tsEintragenBtn.onclick = heimspielEintragen;
-  fbEinreichenBtn.onclick = feedbackEinreichen;
+  npErfassenBtn.onclick = einmalig(npErfassenBtn, nachbestellungErfassen);
+  tsEintragenBtn.onclick = einmalig(tsEintragenBtn, heimspielEintragen);
+  fbEinreichenBtn.onclick = einmalig(fbEinreichenBtn, feedbackEinreichen);
   fbsAbbrechenBtn.onclick = feedbackStatusSchliessen;
   fbsSpeichernBtn.onclick = feedbackStatusSpeichern;
 
@@ -3280,28 +3321,28 @@ function wireEvents() {
   pfandRueckgabeBtn.onclick = () => pfandRueckgabeKlick();
 
   // Runde 44: "Kaffee für Trainer" - siehe kaffeeFuerTrainerAusgeben().
-  kaffeeTrainerBtn.onclick = () => kaffeeFuerTrainerAusgeben();
+  kaffeeTrainerBtn.onclick = einmalig(kaffeeTrainerBtn, () => kaffeeFuerTrainerAusgeben());
 
   bezahlenBtn.onclick = bezahlenOeffnen;
   bezahlenAbbrechenBtn.onclick = bezahlenSchliessen;
-  bezahlenBestaetigenBtn.onclick = bezahlenBestaetigen;
+  bezahlenBestaetigenBtn.onclick = einmalig(bezahlenBestaetigenBtn, bezahlenBestaetigen);
   gegebenFeld.oninput = bezahlenGegebenGeaendert;
 
   ksGezaehltFeld.oninput = ksGezaehltGeaendert;
-  ksSpeichernBtn.onclick = ksSpeichern;
+  ksSpeichernBtn.onclick = einmalig(ksSpeichernBtn, ksSpeichern);
 
   // Runde 43: Warenwirtschaft
   wwInventurBtn.onclick = inventurOeffnen;
   wwBestandDruckenBtn.onclick = bestandDrucken;
   wwModusEingangBtn.onclick = () => wwModusUmschalten("Wareneingang");
   wwModusKorrekturBtn.onclick = () => wwModusUmschalten("Korrektur");
-  wwErfassenBtn.onclick = wareneingangErfassen;
-  wwAbschErfassenBtn.onclick = abschreibungErfassenHandler;
+  wwErfassenBtn.onclick = einmalig(wwErfassenBtn, wareneingangErfassen);
+  wwAbschErfassenBtn.onclick = einmalig(wwAbschErfassenBtn, abschreibungErfassenHandler);
   inventurAbbrechenBtn.onclick = inventurSchliessen;
-  inventurSpeichernBtn.onclick = inventurSpeichern;
+  inventurSpeichernBtn.onclick = einmalig(inventurSpeichernBtn, inventurSpeichern);
 
   // Runde 43: Auswertung / Monatsabrechnung
-  auPfandVerbuchenBtn.onclick = pfandVerbuchen;
+  auPfandVerbuchenBtn.onclick = einmalig(auPfandVerbuchenBtn, pfandVerbuchen);
   auMonatAnzeigenBtn.onclick = monatsabrechnungAnzeigen;
   auMonatDruckenBtn.onclick = monatsabrechnungDrucken;
 
@@ -3312,15 +3353,20 @@ function wireEvents() {
     const vorschlag = MWST_SAETZE[adPKategorieAuswahl.value];
     if (vorschlag != null) adPMwstAuswahl.value = String(vorschlag);
   };
-  adPAnlegenBtn.onclick = produktAnlegenHandler;
-  adBAnlegenBtn.onclick = benutzerAnlegenHandler;
+  adPAnlegenBtn.onclick = einmalig(adPAnlegenBtn, produktAnlegenHandler);
+  adBAnlegenBtn.onclick = einmalig(adBAnlegenBtn, benutzerAnlegenHandler);
   pbAbbrechenBtn.onclick = produktBearbeitenSchliessen;
-  pbSpeichernBtn.onclick = produktBearbeitenSpeichern;
+  pbSpeichernBtn.onclick = einmalig(pbSpeichernBtn, produktBearbeitenSpeichern);
   bbAbbrechenBtn.onclick = benutzerBearbeitenSchliessen;
-  bbSpeichernBtn.onclick = benutzerBearbeitenSpeichern;
+  bbSpeichernBtn.onclick = einmalig(bbSpeichernBtn, benutzerBearbeitenSpeichern);
 
   hinweisOverlay.addEventListener("click", (ev) => {
-    if (ev.target === hinweisOverlay) hinweisSchliessen();
+    if (ev.target !== hinweisOverlay) return;
+    // Backdrop-Tipp wirkt wie "Abbrechen" (Runde 46).
+    const abbrechen = hinweisAbbrechen;
+    hinweisAbbrechen = null;
+    if (abbrechen) abbrechen();
+    else hinweisSchliessen();
   });
   bezahlenOverlay.addEventListener("click", (ev) => {
     if (ev.target === bezahlenOverlay) bezahlenSchliessen();

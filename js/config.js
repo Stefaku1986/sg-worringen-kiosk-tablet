@@ -14,7 +14,7 @@ export const SUPABASE_ANON_KEY = "sb_publishable_UGRAXILrHUkfckecBNXLrQ_6Mgrq_sQ
 // analog zur Fenstertitel-Versionsanzeige der Windows-App (kiosk/__version__.py).
 // Bei sichtbaren Aenderungen an der Tablet-App bitte erhoehen (z.B. 1.1.0
 // fuer neue Funktionen, 1.0.1 fuer reine Bugfixes).
-export const APP_VERSION = "1.19.0";
+export const APP_VERSION = "1.19.1";
 
 // Kategorien und Vorschlagswert fuer den MwSt.-Satz beim Anlegen eines
 // Produkts (Runde 43, Produktverwaltung auf dem Tablet) - identisch zu
