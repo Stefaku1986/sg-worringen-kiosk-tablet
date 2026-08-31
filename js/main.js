@@ -1312,79 +1312,25 @@ async function renderStornoListe() {
 // Kassensturz
 // ---------------------------------------------------------------------
 
-// Zwischenspeicher der zuletzt geladenen Gesamt-Vorschau (siehe
-// renderKassensturz) - wird gebraucht, um beim Tippen in ein
-// Anfangsbestand-Override-Feld (nur bei einer Kasse, die gerade ihren
-// allerersten Kassensturz hat) das angezeigte Soll live nachzuziehen, ohne
-// alles neu aus der Datenbank zu laden.
-let ksLetzteVorschauGesamt = null;
-// {veranstaltung: <input>} - nur fuer Kassen mit istErsterKassensturz.
-let ksAnfangsbestandOverrideFelder = {};
-
 async function renderKassensturz() {
   const vorschau = await repo.kassensturzGesamtVorschau();
-  ksLetzteVorschauGesamt = vorschau;
   letzterKassensturzSoll = vorschau.soll;
 
-  const aufteilungsText = (feld, vorzeichen) =>
-    vorschau.kassen
-      .map((k) => `${KASSE_LABEL[k.veranstaltung] ?? k.veranstaltung}: ${euro(k[feld], vorzeichen)}`)
-      .join(" · ");
-
   ksAnfangsbestand.textContent = euro(vorschau.anfangsbestand);
-  ksAnfangsbestandAufteilung.textContent = aufteilungsText("anfangsbestand");
   ksEinnahmen.textContent = euro(vorschau.einnahmen, true);
-  ksEinnahmenAufteilung.textContent = aufteilungsText("einnahmen", true);
   ksAuszahlungen.textContent = euro(vorschau.auszahlungen);
   ksSonstigeAusgaben.textContent = euro(vorschau.sonstigeAusgaben);
   ksEinzahlungen.textContent = euro(vorschau.einzahlungen);
   ksEntnahmen.textContent = euro(vorschau.entnahmen);
   ksSoll.textContent = euro(vorschau.soll);
-  ksSollAufteilung.textContent = aufteilungsText("soll");
+
+  const sollNegativWarnung = el("ks-soll-negativ-warnung");
+  sollNegativWarnung.style.display = vorschau.sollNegativ ? "" : "none";
 
   ksGezaehltFeld.value = "";
   ksDifferenz.textContent = "";
 
-  // Anfangsbestand-Override nur fuer Kassen, die gerade ihren allerersten
-  // Kassensturz haben (analog zum Windows-Dialog) - im Normalfall (beide
-  // Kassen schon mindestens einmal gezaehlt) bleibt dieser Abschnitt leer.
-  ksAnfangsbestandOverridesContainer.innerHTML = "";
-  ksAnfangsbestandOverrideFelder = {};
-  for (const k of vorschau.kassen) {
-    if (!k.istErsterKassensturz) continue;
-    const label = document.createElement("label");
-    label.innerHTML = `<b>Anfangsbestand (Wechselgeld) – ${KASSE_LABEL[k.veranstaltung] ?? k.veranstaltung}:</b>`;
-    const input = document.createElement("input");
-    input.type = "number";
-    input.inputMode = "decimal";
-    input.step = "0.01";
-    input.className = "betrag";
-    input.value = "0.00";
-    input.oninput = ksAnfangsbestandOverrideGeaendert;
-    ksAnfangsbestandOverrideFelder[k.veranstaltung] = input;
-    ksAnfangsbestandOverridesContainer.appendChild(label);
-    ksAnfangsbestandOverridesContainer.appendChild(input);
-  }
-
   await renderKassensturzHistorie();
-}
-
-function ksAktuellesSollGesamt() {
-  if (!ksLetzteVorschauGesamt) return 0;
-  let soll = 0;
-  for (const k of ksLetzteVorschauGesamt.kassen) {
-    const feld = ksAnfangsbestandOverrideFelder[k.veranstaltung];
-    const anfangsbestand = feld ? betragLesen(feld) || 0 : k.anfangsbestand;
-    soll += anfangsbestand + k.einnahmen - k.auszahlungen - k.sonstigeAusgaben
-      + k.einzahlungen - k.entnahmen;
-  }
-  return Math.round(soll * 100) / 100;
-}
-
-function ksAnfangsbestandOverrideGeaendert() {
-  letzterKassensturzSoll = ksAktuellesSollGesamt();
-  ksSoll.textContent = euro(letzterKassensturzSoll);
-  ksGezaehltGeaendert();
 }
 
 function ksGezaehltGeaendert() {
@@ -1400,53 +1346,35 @@ function ksGezaehltGeaendert() {
 
 async function ksSpeichern() {
   const gezaehlt = betragLesen(ksGezaehltFeld);
-  if (isNaN(gezaehlt)) {
-    zeigeHinweis("Fehlende Angabe", "Bitte den tatsächlich gezählten Betrag eingeben.");
+  if (isNaN(gezaehlt) || gezaehlt < 0) {
+    zeigeHinweis("Fehlende Angabe", "Bitte den tatsächlich gezählten Betrag eingeben (nicht negativ).");
     return;
   }
-  // Runde 39: kein eigenes "Startbetrag naechste Runde"-Feld mehr - der
-  // komplette gezaehlte Betrag bleibt automatisch als Wechselgeld in der
-  // Kasse (siehe Windows-Pendant KombinierterKassensturzDialog.
-  // naechster_startbetrag()).
+  // Der komplette gezaehlte Betrag bleibt automatisch als Wechselgeld in der
+  // Kasse (= Anfangsbestand fuer den naechsten Kassensturz).
   const naechsterStart = gezaehlt;
   const benutzer = session.getAktuellerBenutzer();
-  const overrides = {};
-  for (const [veranstaltung, feld] of Object.entries(ksAnfangsbestandOverrideFelder)) {
-    const wert = betragLesen(feld);
-    overrides[veranstaltung] = isNaN(wert) ? 0 : wert;
-  }
+
   // Runde 47, Etappe 3.2: Fehlerbehandlung fuer Kassensturz-Speichern - die
-  // kritischste Buchung im System. Wenn repo.kassensturzGesamtDurchfuehren()
-  // fehlschlaegt (IndexedDB voll, Netzwerkfehler), muss das sichtbar werden.
+  // kritischste Buchung im System.
   const ergebnis = await gebucht(
     "Der Kassensturz",
     () => repo.kassensturzGesamtDurchfuehren(
       gezaehlt,
       naechsterStart,
-      overrides,
+      null, // anfangsbestandOverrides wird nicht mehr verwendet
       benutzer.name
     )
   );
   if (ergebnis === FEHLGESCHLAGEN) return;  // Fehlerfall, Meldung wurde schon von gebucht() angezeigt
-  const aufteilungText = ergebnis.kassen
-    .map(
-      (k) =>
-        `${KASSE_LABEL[k.veranstaltung] ?? k.veranstaltung}: Soll ${euro(k.soll)}, ` +
-        `Gezählt ${euro(k.gezaehlterBetrag)}, Differenz ${euro(k.differenz, true)}`
-    )
-    .join("\n");
+
   zeigeHinweis(
     "Kassensturz gespeichert",
-    `Soll (gesamt): ${euro(ergebnis.soll)}\nGezählt (gesamt): ${euro(gezaehlt)}\n` +
-      `Differenz (gesamt): ${euro(ergebnis.differenz, true)}\n\nAufteilung nach Kasse:\n${aufteilungText}`
+    `Soll: ${euro(ergebnis.soll)}\nGezählt: ${euro(ergebnis.gezaehlterBetrag)}\n` +
+      `Differenz: ${euro(ergebnis.differenz, true)}`
   );
   renderKassensturz();
   renderEntnahmen();
-  // Runde 39: die fruehere Ueberschuss-Entnahme-Nachfrage entfaellt hier
-  // bewusst - seit dem Wegfall des separaten "Startbetrag naechste
-  // Runde"-Felds ist der Ueberschuss (gezaehlt - naechster Start) immer 0.
-  // Wer tatsaechlich Bargeld aus der Kasse entnimmt, bucht das weiterhin
-  // ganz normal ueber den eigenen Reiter "Entnahmen".
 }
 
 // Zwischenspeicher fuer den Dialog "Bargeld-Entnahme dokumentieren" (siehe
@@ -1489,17 +1417,14 @@ async function ksEntnahmeSpeichern() {
 }
 
 async function renderKassensturzHistorie() {
-  // Runde 37: nicht mehr nach aktiver Kasse gefiltert, da der Kassensturz
-  // jetzt kombiniert (fuer alle Kassen zusammen) durchgefuehrt wird - die
-  // "Kasse"-Spalte zeigt weiterhin, wie sich die einzelnen Eintraege auf
-  // Jugend/Senioren aufteilen.
+  // Runde 52: zeigt nur noch Zeilen mit veranstaltung = 'Gesamt'
+  // ab dem Stichtag (alte Aufteilungszeilen sind ignoriert).
   const anzeige = (await repo.kassensturzHistorie(200)).slice(0, 20);
   ksHistorieBody.innerHTML = "";
   for (const k of anzeige) {
     const tr = document.createElement("tr");
     const zellen = [
       formatDatumUhrzeit(k.datum),
-      KASSE_LABEL[k.veranstaltung] ?? k.veranstaltung,
       euro(k.erwarteter_betrag),
       euro(k.gezaehlter_betrag),
       euro(k.differenz, true),

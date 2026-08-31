@@ -138,27 +138,26 @@
       <section id="kassensturz-view" style="display:none;">
         <div class="karte" style="max-width:480px;">
           <h2 style="margin-top:0; color:var(--blau-dunkel);">Kassensturz (gesamte Kasse)</h2>
-          <div id="ks-anfangsbestand-overrides"></div>
           <div class="kennzahl-zeile"><span>Anfangsbestand</span><span id="ks-anfangsbestand"></span></div>
-          <div class="kennzahl-aufteilung" id="ks-anfangsbestand-aufteilung"></div>
           <div class="kennzahl-zeile"><span>Einnahmen seit letztem Kassensturz</span><span id="ks-einnahmen"></span></div>
-          <div class="kennzahl-aufteilung" id="ks-einnahmen-aufteilung"></div>
           <div class="kennzahl-zeile"><span>Schiedsrichter-Auszahlungen</span><span id="ks-auszahlungen"></span></div>
           <div class="kennzahl-zeile"><span>Sonstige Ausgaben</span><span id="ks-sonstige-ausgaben"></span></div>
           <div class="kennzahl-zeile"><span>Bargeld-Einzahlungen</span><span id="ks-einzahlungen"></span></div>
           <div class="kennzahl-zeile"><span>Bargeld-Entnahmen</span><span id="ks-entnahmen"></span></div>
           <div class="kennzahl-zeile gesamt"><span>Soll (gesamt)</span><span id="ks-soll"></span></div>
-          <div class="kennzahl-aufteilung" id="ks-soll-aufteilung"></div>
 
-          <label><b>Tatsächlich gezählt (Ist, gesamt):</b></label>
+          <div id="ks-soll-negativ-warnung" class="warnung" style="display:none; margin-top:12px; color:var(--rot);">
+            <strong>Warnung:</strong> Der Soll ist negativ. Das kann bei einer physischen Kasse nicht sein
+            und deutet auf eine Fehlbuchung hin. Bitte prüfen.
+          </div>
+
+          <label style="margin-top:12px;"><b>Tatsächlich gezählt (Ist, gesamt):</b></label>
           <input type="text" inputmode="decimal" class="betrag" id="ks-gezaehlt-feld" />
 
           <div id="ks-differenz" class="kennzahl-zeile gesamt"></div>
 
           <p class="hinweis">Der gezählte Betrag bleibt komplett als
-            Wechselgeld in der Kasse und wird automatisch anteilig nach
-            Soll auf Jugend-/Seniorenkasse aufgeteilt (= Anfangsbestand für
-            den nächsten Kassensturz).</p>
+            Wechselgeld in der Kasse (= Anfangsbestand für den nächsten Kassensturz).</p>
 
           <button id="ks-speichern-btn" class="btn btn-primaer" style="width:100%;">Kassensturz speichern</button>
         </div>
@@ -167,7 +166,7 @@
           <h2 style="margin-top:0; color:var(--blau-dunkel);">Verlauf</h2>
           <table class="liste" id="ks-historie-tabelle">
             <thead>
-              <tr><th>Datum</th><th>Kasse</th><th>Soll</th><th>Gezählt</th><th>Differenz</th></tr>
+              <tr><th>Datum</th><th>Soll</th><th>Gezählt</th><th>Differenz</th></tr>
             </thead>
             <tbody></tbody>
           </table>

@@ -101,3 +101,12 @@ export const FEEDBACK_STATUS_LABEL = {
   erledigt: "Erledigt",
   abgelehnt: "Abgelehnt",
 };
+
+// Runde 52: Umstellung auf eine einzige physische Geldkasse ab diesem Stichtag.
+// Aeltere Kassensturz-Eintraege wurden bei Aufteilung auf Jugend/Senioren angelegt
+// und sind physisch unmoeglich (negative gezaehlte Betraege). Diese Konstanten
+// sind identisch zu kiosk/repository.py und muessen mit der Windows-App
+// synchronisiert bleiben.
+export const KASSENSTURZ_STICHTAG = "2026-08-31T00:00:00+00:00";
+export const KASSENSTURZ_GRUNDBESTAND = 169.00;
+export const KASSENSTURZ_VERANSTALTUNG_GESAMT = "Gesamt";
