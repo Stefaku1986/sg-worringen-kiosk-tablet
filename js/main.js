@@ -30,6 +30,7 @@ const el = (id) => document.getElementById(id);
 const appVersionEl = el("app-version");
 const kasseAuswahlBereich = el("kasse-auswahl-bereich");
 const kasseAuswahl = el("kasse-auswahl");
+const pfandmarkenAnzeige = el("pfandmarken-anzeige");
 const syncStatusEl = el("sync-status");
 const syncJetztBtn = el("sync-jetzt-btn");
 const updateStatusEl = el("update-status");
@@ -563,6 +564,7 @@ function zeigeHauptView(name) {
     tabsEl.style.display = "none";
     mehrTabsEl.style.display = "none";
     kasseAuswahlBereich.style.display = "none";
+    pfandmarkenAnzeige.style.display = "none";
     benutzerLabel.style.display = "none";
     abmeldenBtn.style.display = "none";
     loginNutzerauswahl.style.display = "";
@@ -574,6 +576,7 @@ function zeigeHauptView(name) {
   tabsEl.style.display = "flex";
   kasseAuswahlBereich.style.display = "flex";
   kasseAuswahlBereich.style.alignItems = "center";
+  pfandmarkenAnzeige.style.display = name === "verkauf" ? "" : "none";
   benutzerLabel.style.display = "";
   abmeldenBtn.style.display = "";
 
@@ -614,7 +617,10 @@ function zeigeHauptView(name) {
   tabAuswertung.classList.toggle("aktiv", name === "auswertung");
   tabAdmin.classList.toggle("aktiv", name === "admin");
 
-  if (name === "verkauf") renderProduktGrid();
+  if (name === "verkauf") {
+    renderProduktGrid();
+    aktualisierePfandmarkenAnzeige();
+  }
   if (name === "storno") renderStornoListe();
   if (name === "kassensturz") renderKassensturz();
   if (name === "schiedsrichter") renderSchiedsrichter();
@@ -1164,6 +1170,27 @@ function warenkorbSumme() {
   return rund2(warenkorb.reduce((s, z) => s + z.menge * (z.einzelpreis + (z.pfandBetrag || 0)), 0));
 }
 
+async function aktualisierePfandmarkenAnzeige() {
+  try {
+    const pfandmarken = await repo.offenePfandmarkenJeKasse();
+    const kasseName = session.getAktiveKasse();
+    const daten = pfandmarken[kasseName] || { menge: null, betrag: 0.0 };
+    const menge = daten.menge;
+    const betrag = daten.betrag;
+
+    let text;
+    if (menge !== null) {
+      text = `Offene Pfandmarken: ${menge} (${euro(betrag)})`;
+    } else {
+      text = `Offenes Pfand: ${euro(betrag)}`;
+    }
+    pfandmarkenAnzeige.textContent = text;
+  } catch (exc) {
+    console.error("Fehler beim Aktualisieren der Pfandmarken-Anzeige:", exc);
+    pfandmarkenAnzeige.textContent = "—";
+  }
+}
+
 function bezahlenOeffnen() {
   if (!warenkorb.length) return;
   const summe = warenkorbSumme();
@@ -1243,6 +1270,10 @@ async function bezahlenBestaetigen() {
   helferpreisAktiv = false;
   helferpreisBtn.classList.remove("aktiv");
   renderWarenkorb();
+  // Die Pfandrückgabe wird hier buchungstechnisch wirksam, da sie als Warenkorb-Position
+  // mit dem kassiervorgangAbschliessen() gebucht wurde - deshalb muss die Anzeige
+  // der offenen Pfandmarken hier aktualisiert werden.
+  aktualisierePfandmarkenAnzeige();
   bezahlenSchliessen();
 }
 
@@ -2307,7 +2338,10 @@ function kassenvorschlagVerwerfen() {
 }
 
 function aktualisiereAktuelleAnsichtNachKassenwechsel() {
-  if (aktuelleAnsicht === "verkauf") renderProduktGrid();
+  if (aktuelleAnsicht === "verkauf") {
+    renderProduktGrid();
+    aktualisierePfandmarkenAnzeige();
+  }
   if (aktuelleAnsicht === "storno") renderStornoListe();
   if (aktuelleAnsicht === "kassensturz") renderKassensturz();
   if (aktuelleAnsicht === "schiedsrichter") renderSchiedsrichter();

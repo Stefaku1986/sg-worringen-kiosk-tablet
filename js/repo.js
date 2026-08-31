@@ -1751,6 +1751,47 @@ export async function auswertungJeKasse() {
   return ergebnis;
 }
 
+// Liefert die Anzahl der aktuell offenen (noch im Umlauf befindlichen)
+// Pfandmarken je Kasse, berechnet aus dem offenen Pfandbetrag in Euro.
+// Pendant zu repository.offene_pfandmarken_je_kasse() in der Windows-App.
+//
+// Die Stückzahl wird ermittelt, indem der Pfandbetrag durch den
+// vorherrschenden Pfandbetrag der aktiven, pfandpflichtigen Produkte
+// geteilt wird. Gibt es genau einen Pfandbetrag unter den aktiven
+// Produkten, wird die Markenanzahl berechnet. Gibt es keinen oder mehrere
+// verschiedene Pfandbeträge, wird null zurückgegeben, damit die
+// Oberfläche nur den Euro-Betrag anzeigt statt einer potenziell falschen
+// Stückzahl (mehrere unterschiedliche Pfandbeträge würden zu Mehrdeutigkeit führen).
+//
+// Rückgabewert: dict mit Kassennamen als Schlüssel und einem dict
+// als Wert:
+//   {
+//     "Jugend": {"menge": 13, "betrag": 26.00}  oder  {"menge": null, "betrag": 26.00},
+//     "Senioren": {"menge": 14, "betrag": 28.00}  oder  {"menge": null, "betrag": 28.00},
+//   }
+export async function offenePfandmarkenJeKasse() {
+  const alle = await getAll("produkte");
+  const pfandBetraege = alle
+    .filter((p) => p.aktiv && p.pfand_betrag > 0)
+    .map((p) => p.pfand_betrag);
+
+  // Entferne Duplikate und prüfe, ob genau ein eindeutiger Wert vorhanden ist
+  const eindeutig = [...new Set(pfandBetraege)];
+  const pfandBetragFuerBerechnung = eindeutig.length === 1 ? eindeutig[0] : null;
+
+  const auswertung = await auswertungJeKasse();
+  const ergebnis = {};
+  for (const kasse of VERANSTALTUNGEN) {
+    const pfandBetrag = auswertung[kasse]?.pfand ?? 0.0;
+    let menge = null;
+    if (pfandBetragFuerBerechnung !== null && pfandBetragFuerBerechnung > 0) {
+      menge = Math.round(pfandBetrag / pfandBetragFuerBerechnung);
+    }
+    ergebnis[kasse] = { menge, betrag: rund2(pfandBetrag) };
+  }
+  return ergebnis;
+}
+
 // ---------------------------------------------------------------------
 // Pfand-Gewinn-Verbuchung (Runde 40 am Rechner, Runde 43 auch auf dem
 // Tablet) - Pendant zu repository.pfand_gewinn_verbuchen/-stornieren.
