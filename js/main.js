@@ -113,6 +113,7 @@ const katBtnGetraenk = el("kat-btn-Getraenk");
 const katBtnSpeise = el("kat-btn-Speise");
 const helferpreisBtn = el("helferpreis-btn");
 const pfandRueckgabeBtn = el("pfand-rueckgabe-btn");
+const pfandRueckgabe1Btn = el("pfand-rueckgabe-1-btn");
 const kaffeeTrainerBtn = el("kaffee-trainer-btn");
 const teeTrainerBtn = el("tee-trainer-btn");
 const warenkorbListe = el("warenkorb-liste");
@@ -1002,14 +1003,14 @@ function warenkorbPfandErlassUmschalten(zeile, erlassen) {
 }
 
 // "Pfand zurueckgeben": mit einem einzigen Antippen wird sofort eine
-// pauschale Rueckgabe (immer 2,00 EUR, unabhaengig von der Flasche) als
-// eigenstaendige Warenkorb-Position mit einzelpreis 0 und negativem
-// Pfandbetrag gebucht - ueber das feste Pseudo-Produkt
-// PFAND_RUECKGABE_PRODUKT_ID (siehe config.js), damit keine Flasche mehr
-// ausgewaehlt werden muss (siehe repo.js kassiervorgangAbschliessen:
-// mindert den Gesamtbetrag automatisch und bucht bewusst keinen
-// Warenausgang). Erneutes Antippen erhoeht einfach die Menge.
-async function pfandRueckgabeKlick() {
+// pauschale Rueckgabe als eigenstaendige Warenkorb-Position mit
+// einzelpreis 0 und negativem Pfandbetrag gebucht - ueber das feste
+// Pseudo-Produkt PFAND_RUECKGABE_PRODUKT_ID (siehe config.js). Seit
+// Runde 54 gibt es zwei feste Betraege (2,00 und 1,00 EUR), weil im
+// Sortiment beide Pfandwerte vorkommen. Der Betrag wird vom Knopf
+// uebergeben (nicht mehr aus dem Produkt gelesen). Erneutes Antippen
+// erhoeht einfach die Menge. Siehe kassiervorgangAbschliessen in repo.js.
+async function pfandRueckgabeKlick(betrag) {
   const produkt = await repo.pfandPauschalProdukt();
   if (!produkt) {
     zeigeHinweis(
@@ -1018,11 +1019,9 @@ async function pfandRueckgabeKlick() {
     );
     return;
   }
-  if (!produkt.pfand_betrag) {
-    zeigeHinweis("Kein Pfandbetrag hinterlegt", "Für die Pfandrückgabe ist aktuell kein Betrag hinterlegt.");
-    return;
-  }
-  const bestehend = warenkorb.find((z) => z.produktId === produkt.id && z.istPfandrueckgabe);
+  const bestehend = warenkorb.find(
+    (z) => z.produktId === produkt.id && z.istPfandrueckgabe && z.pfandBetrag === -betrag
+  );
   if (bestehend) {
     bestehend.menge += 1;
   } else {
@@ -1034,7 +1033,7 @@ async function pfandRueckgabeKlick() {
       einkaufspreis: 0,
       mwstSatz: 0,
       istHelferpreis: false,
-      pfandBetrag: -produkt.pfand_betrag,
+      pfandBetrag: -betrag,
       istPfandrueckgabe: true,
     });
   }
@@ -3481,7 +3480,8 @@ function wireEvents() {
 
   // Kein Umschalter mehr: ein Antippen bucht sofort eine pauschale
   // Pfandrückgabe (siehe pfandRueckgabeKlick).
-  pfandRueckgabeBtn.onclick = () => pfandRueckgabeKlick();
+  pfandRueckgabeBtn.onclick = () => pfandRueckgabeKlick(2);
+  pfandRueckgabe1Btn.onclick = () => pfandRueckgabeKlick(1);
 
   // Runde 44: "Kaffee für Trainer" - siehe trainerAusgabeAusgeben().
   kaffeeTrainerBtn.onclick = einmalig(kaffeeTrainerBtn, () =>
