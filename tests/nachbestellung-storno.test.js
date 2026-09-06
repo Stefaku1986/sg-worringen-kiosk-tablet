@@ -38,8 +38,15 @@ test("nachbestellung-storno: wareneinkaufGesamt sinkt nach Stornierung", async (
     synced_at: null,
   });
 
+  // Jahr und Monat vom aktuellen Zeitpunkt ableiten:
+  // lieferantenPfandErfassen() bucht mit aktuellem Zeitstempel, ein fester Monat
+  // im Test ist eine Zeitbombe, die beim Monatswechsel zuschlaegt.
+  const heute = new Date();
+  const jahr = heute.getFullYear();
+  const monat = heute.getMonth() + 1;
+
   // Ausgangswert: keine Wareneingaenge fuer dieses Produkt
-  let bericht = await wareneinkaufBericht(2026, 8);
+  let bericht = await wareneinkaufBericht(jahr, monat);
   const eintragVorher = bericht.find((e) => e.produkt_id === produktId);
   const wertvörher = eintragVorher ? eintragVorher.netto : 0;
 
@@ -63,7 +70,7 @@ test("nachbestellung-storno: wareneinkaufGesamt sinkt nach Stornierung", async (
   );
 
   // Nach Nachbestellung pruefen
-  bericht = await wareneinkaufBericht(2026, 8);
+  bericht = await wareneinkaufBericht(jahr, monat);
   const eintragNach = bericht.find((e) => e.produkt_id === produktId);
   assert.ok(
     eintragNach && eintragNach.netto === wertvörher + 5.0,
@@ -75,7 +82,7 @@ test("nachbestellung-storno: wareneinkaufGesamt sinkt nach Stornierung", async (
   assert.ok(stornoId, "Storno-ID sollte vorhanden sein");
 
   // Nach Stornierung pruefen: Wert sollte wieder auf Ausgangswert sein
-  bericht = await wareneinkaufBericht(2026, 8);
+  bericht = await wareneinkaufBericht(jahr, monat);
   const eintragNachStorno = bericht.find((e) => e.produkt_id === produktId);
   const wertNachStorno = eintragNachStorno ? eintragNachStorno.netto : 0;
   assert.strictEqual(
@@ -90,7 +97,14 @@ test("nachbestellung-storno: wareneinkaufBericht zeigt korrekte Mengen nach Stor
 
   // Produkt "Wasser" anlegen (Test 2 - eindeutig)
   const produktId = neueId();
-  const monatStr = "2026-08";
+
+  // Jahr und Monat vom aktuellen Zeitpunkt ableiten:
+  // lieferantenPfandErfassen() bucht mit aktuellem Zeitstempel, ein fester Monat
+  // im Test ist eine Zeitbombe, die beim Monatswechsel zuschlaegt.
+  const heute = new Date();
+  const jahr = heute.getFullYear();
+  const monat = heute.getMonth() + 1;
+  const monatStr = `${jahr}-${String(monat).padStart(2, "0")}`;
   await put("produkte", {
     id: produktId,
     name: "Wasser_Test2",
@@ -108,7 +122,7 @@ test("nachbestellung-storno: wareneinkaufBericht zeigt korrekte Mengen nach Stor
   });
 
   // Bericht vor Nachbestellung: sollte dieses Produkt NICHT enthalten
-  let berichtVorher = await wareneinkaufBericht(2026, 8);
+  let berichtVorher = await wareneinkaufBericht(jahr, monat);
   let eintragVorher = berichtVorher.find((e) => e.produkt_id === produktId);
   assert.strictEqual(
     eintragVorher,
@@ -135,7 +149,7 @@ test("nachbestellung-storno: wareneinkaufBericht zeigt korrekte Mengen nach Stor
   );
 
   // Nach Nachbestellung: Bericht sollte 20 Stueck zu 0,60 EUR zeigen
-  let berichtNach = await wareneinkaufBericht(2026, 8);
+  let berichtNach = await wareneinkaufBericht(jahr, monat);
   let eintragNach = berichtNach.find((e) => e.produkt_id === produktId);
   assert.ok(eintragNach, "Produkt sollte nach Nachbestellung im Bericht sein");
   assert.strictEqual(eintragNach.menge, 20, "Menge sollte 20 sein");
@@ -150,7 +164,7 @@ test("nachbestellung-storno: wareneinkaufBericht zeigt korrekte Mengen nach Stor
 
   // Nach Stornierung: Produkt sollte mit Menge 0 im Bericht sein
   // (oder gar nicht - beide Verhalten sind korrekt)
-  let berichtNachStorno = await wareneinkaufBericht(2026, 8);
+  let berichtNachStorno = await wareneinkaufBericht(jahr, monat);
   let eintragNachStorno = berichtNachStorno.find((e) => e.produkt_id === produktId);
   if (eintragNachStorno) {
     // Wenn der Eintrag da ist, sollte die Menge 0 sein

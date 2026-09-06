@@ -337,6 +337,20 @@ const KATEGORIE_LABEL = { Getraenk: "Getränke", Speise: "Speisen" };
 const KASSE_LABEL = { Jugend: "Jugendkasse", Senioren: "Seniorenkasse" };
 const WOCHENTAG_LABEL = { 1: "Montag", 2: "Dienstag", 3: "Mittwoch", 4: "Donnerstag", 5: "Freitag", 6: "Samstag", 7: "Sonntag" };
 
+// Tabellen, deren erfolgreiche Synchronisierung vor einem Kassensturz zwingend erforderlich ist.
+// Diese Tabellen enthalten die Daten, aus denen der Soll-Betrag berechnet wird.
+// Fehlt eine davon, ist der Soll falsch und würde sich der Fehler auf alle folgenden
+// Kassenstürze übertragen. Scheitert eine andere Tabelle (z.B. feedback oder heimspiele),
+// ist der Soll davon unberührt.
+const KASSENSTURZ_PFLICHT_TABELLEN = [
+  "kassenstuerze",
+  "kassiervorgaenge",
+  "schiedsrichter_auszahlungen",
+  "sonstige_ausgaben",
+  "bargeld_einzahlungen",
+  "bargeld_entnahmen",
+];
+
 // ---------------------------------------------------------------------
 // Zustand
 // ---------------------------------------------------------------------
@@ -357,6 +371,7 @@ let pinTimeoutInterval = null; // Interval-ID für den Countdown
 let pinTimeoutSekunden = 0; // Sekunden, die noch übrig sind
 let aktuelleAnsicht = "login"; // 'login' | 'verkauf' | 'storno' | 'kassensturz' | 'schiedsrichter' | 'einzahlen' | 'ausgaben' | 'entnahmen' | 'nachbestellung' | 'termine'
 let letzterKassensturzSoll = 0;
+let letzteKassensturzVorschau = null; // merkt sich die aktuelle Vorschau fuer ksSpeichern()
 let vorgaengeCache = []; // fuer Storno-Ansicht
 let abgelehnteKassenvorschlaege = new Set(); // "schluessel" bereits verworfener Vorschlaege
 let letzteMehrAnsicht = null; // zuletzt aktive Unteransicht innerhalb "Mehr", siehe zeigeHauptView
@@ -1343,7 +1358,68 @@ async function renderStornoListe() {
 // ---------------------------------------------------------------------
 
 async function renderKassensturz() {
+  // Synchronisierung ist zwingend: Der Soll wird aus lokalen Daten berechnet.
+  // Fehlen Buchungen von anderen Geräten, ist der Soll falsch und würde sich der Fehler
+  // auf alle folgenden Kassenstürze übertragen.
+  const syncErgebnis = await syncJetzt();
+
+  const sollNegativWarnung = el("ks-soll-negativ-warnung");
+
+  // Prüfe auf Vollausfall (fehler gesetzt und zeitpunkt leer) oder fehlgeschlagene Pflicht-Tabellen
+  const istVollausfall = syncErgebnis.fehler && !syncErgebnis.zeitpunkt;
+  const fehlgeschlageneTabellen = syncErgebnis.fehlgeschlageneTabellen || [];
+  const pflichtTabelleFehlt = KASSENSTURZ_PFLICHT_TABELLEN.some((t) =>
+    fehlgeschlageneTabellen.includes(t)
+  );
+
+  if (istVollausfall || pflichtTabelleFehlt) {
+    // Sperren: Feld und Button müssen deaktiviert werden
+    ksGezaehltFeld.disabled = true;
+    ksSpeichernBtn.disabled = true;
+
+    // Berechne den Grund für die Fehlermeldung
+    let technischerGrund = "";
+    if (istVollausfall) {
+      technischerGrund = syncErgebnis.fehler || "Verbindungsfehler";
+    } else if (pflichtTabelleFehlt) {
+      technischerGrund = `Folgende Tabellen konnten nicht synchronisiert werden: ${fehlgeschlageneTabellen
+        .filter((t) => KASSENSTURZ_PFLICHT_TABELLEN.includes(t))
+        .join(", ")}`;
+    }
+
+    zeigeHinweis(
+      "Kassensturz nicht möglich",
+      "Dieses Gerät ist nicht auf dem neuesten Stand.\n\n" +
+        "Der Soll-Betrag wird aus den Buchungen dieses Geräts berechnet. Fehlen Verkäufe oder " +
+        "Entnahmen von anderen Geräten, ist der Soll falsch - und der gezählte Betrag wird zum " +
+        "Anfangsbestand aller folgenden Kassenstürze. Ein Fehler hier pflanzt sich fort.\n\n" +
+        "Bitte die Internetverbindung herstellen und es erneut versuchen.\n\n" +
+        `Technischer Grund: ${technischerGrund}`
+    );
+
+    // Zeige keine Daten, da die Berechnung unsicher ist
+    ksAnfangsbestand.textContent = "–";
+    ksEinnahmen.textContent = "–";
+    ksAuszahlungen.textContent = "–";
+    ksSonstigeAusgaben.textContent = "–";
+    ksEinzahlungen.textContent = "–";
+    ksEntnahmen.textContent = "–";
+    ksSoll.textContent = "–";
+    sollNegativWarnung.style.display = "none";
+    ksGezaehltFeld.value = "";
+    ksDifferenz.textContent = "";
+
+    await renderKassensturzHistorie();
+    return;
+  }
+
+  // Erfolgreich synchronisiert - gebe Feld und Button frei
+  ksGezaehltFeld.disabled = false;
+  ksSpeichernBtn.disabled = false;
+
+  // Hole die Vorschau und speichere sie für ksSpeichern()
   const vorschau = await repo.kassensturzGesamtVorschau();
+  letzteKassensturzVorschau = vorschau;
   letzterKassensturzSoll = vorschau.soll;
 
   ksAnfangsbestand.textContent = euro(vorschau.anfangsbestand);
@@ -1354,7 +1430,6 @@ async function renderKassensturz() {
   ksEntnahmen.textContent = euro(vorschau.entnahmen);
   ksSoll.textContent = euro(vorschau.soll);
 
-  const sollNegativWarnung = el("ks-soll-negativ-warnung");
   sollNegativWarnung.style.display = vorschau.sollNegativ ? "" : "none";
 
   ksGezaehltFeld.value = "";
@@ -1392,17 +1467,23 @@ async function ksSpeichern() {
     () => repo.kassensturzGesamtDurchfuehren(
       gezaehlt,
       naechsterStart,
-      null, // anfangsbestandOverrides wird nicht mehr verwendet
+      letzteKassensturzVorschau,
       benutzer.name
     )
   );
   if (ergebnis === FEHLGESCHLAGEN) return;  // Fehlerfall, Meldung wurde schon von gebucht() angezeigt
 
-  zeigeHinweis(
-    "Kassensturz gespeichert",
-    `Soll: ${euro(ergebnis.soll)}\nGezählt: ${euro(ergebnis.gezaehlterBetrag)}\n` +
-      `Differenz: ${euro(ergebnis.differenz, true)}`
-  );
+  // Baue die Meldung auf
+  let meldung = `Soll: ${euro(ergebnis.soll)}\nGezählt: ${euro(ergebnis.gezaehlterBetrag)}\n` +
+    `Differenz: ${euro(ergebnis.differenz, true)}`;
+
+  // Zeige zusätzlich an, wenn während des Zählens noch Buchungen hinzugekommen sind
+  if (ergebnis.nachtraeglicheBuchungen && ergebnis.nachtraeglicheBuchungen !== 0) {
+    meldung += `\n\nWährend des Zählens wurden noch ${euro(ergebnis.nachtraeglicheBuchungen, true)} gebucht. ` +
+      "Diese fließen in den nächsten Kassensturz ein.";
+  }
+
+  zeigeHinweis("Kassensturz gespeichert", meldung);
   renderKassensturz();
   renderEntnahmen();
 }

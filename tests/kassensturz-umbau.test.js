@@ -103,8 +103,11 @@ test("kassensturz-umbau: Nach kassensturzGesamtDurchfuehren existiert 'Gesamt'-Z
     benutzer: "test",
   });
 
+  // Holen der Vorschau, die der Benutzer sehen würde
+  const vorschau = await kassensturzGesamtVorschau();
+
   // Kassensturz durchfuehren
-  const ergebnis = await kassensturzGesamtDurchfuehren(244.00, 244.00, null, "test");
+  const ergebnis = await kassensturzGesamtDurchfuehren(244.00, 244.00, vorschau, "test");
 
   assert.ok(ergebnis.id, "Ergebnis sollte eine ID haben");
   assert.strictEqual(ergebnis.gezaehlterBetrag, 244.00, "gezaelter sollte 244 sein");
@@ -172,8 +175,10 @@ test("kassensturz-umbau: Nachfolgender Kassensturz nutzt vorherigen Übertrag", 
 test("kassensturz-umbau: Negativer gezählter Betrag wirft Fehler", async () => {
   await openDb();
 
+  const vorschau = await kassensturzGesamtVorschau();
+
   try {
-    await kassensturzGesamtDurchfuehren(-10.00, 100.00, null, "test");
+    await kassensturzGesamtDurchfuehren(-10.00, 100.00, vorschau, "test");
     assert.fail("Sollte einen Fehler werfen");
   } catch (exc) {
     assert.ok(
@@ -186,8 +191,10 @@ test("kassensturz-umbau: Negativer gezählter Betrag wirft Fehler", async () => 
 test("kassensturz-umbau: Negativer Startbetrag wirft Fehler", async () => {
   await openDb();
 
+  const vorschau = await kassensturzGesamtVorschau();
+
   try {
-    await kassensturzGesamtDurchfuehren(100.00, -10.00, null, "test");
+    await kassensturzGesamtDurchfuehren(100.00, -10.00, vorschau, "test");
     assert.fail("Sollte einen Fehler werfen");
   } catch (exc) {
     assert.ok(

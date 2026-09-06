@@ -1112,6 +1112,7 @@ export async function kassensturzGesamtVorschau() {
     soll,
     sollNegativ: soll < 0,
     kassen,
+    stand: jetzt(),
   };
 }
 
@@ -1163,7 +1164,7 @@ async function bargeldEntnahmenAdhocSummeGesamt(seit) {
 export async function kassensturzGesamtDurchfuehren(
   gezaehlterBetragGesamt,
   naechsterStartbetragGesamt,
-  anfangsbestandOverrides, // wird nicht mehr verwendet (ignoriert)
+  vorschau,
   benutzerName
 ) {
   if (gezaehlterBetragGesamt < 0) {
@@ -1177,7 +1178,24 @@ export async function kassensturzGesamtDurchfuehren(
     );
   }
 
-  const vorschau = await kassensturzGesamtVorschau();
+  // Prüfe, dass vorschau vollständig ist - die zählende Person hat genau DIESE
+  // Momentaufnahme auf dem Bildschirm gesehen, wir speichern genau diese.
+  // Ein Zurückfallen auf Neuberechnung darf es nicht geben (das war der Fehler).
+  if (!vorschau || typeof vorschau !== "object") {
+    throw new Error(
+      "Die Vorschau muss übergeben werden. Bitte die Seite neu laden und es erneut versuchen."
+    );
+  }
+  if (
+    vorschau.anfangsbestand === undefined ||
+    vorschau.soll === undefined ||
+    vorschau.stand === undefined
+  ) {
+    throw new Error(
+      "Die Vorschau ist unvollständig (anfangsbestand, soll oder stand fehlt). Bitte die Seite neu laden und es erneut versuchen."
+    );
+  }
+
   const anfangsbestand = vorschau.anfangsbestand;
   const soll = vorschau.soll;
   const differenz = rund2(gezaehlterBetragGesamt - soll);
@@ -1185,9 +1203,26 @@ export async function kassensturzGesamtDurchfuehren(
   const ksId = neueId();
   const gid = await geraetId();
 
+  // Berechne eine frische Vorschau VORHER, um zu sehen, was zwischen der
+  // Momentaufnahme (vorschau.stand) und jetzt (Speicher-Zeitpunkt) gebucht wurde.
+  // Die Reihenfolge ist zwingend: NACH dem put() hätte die neue Kassensturz-Zeile
+  // selbst den "seit"-Wert (die Basis der Vorschau-Berechnung) verändert, und die
+  // Differenz würde nicht das Dazwischengekommen messen, sondern den Anfangsbestand
+  // verdoppeln. Mit der Vorschau VORHER haben beide Aufrufe (vorschau und neueVorschau)
+  // dieselbe Grundlage (anfangsbestand, seit), und die Soll-Differenz ist exakt
+  // das, was in der Zwischenzeit hinzugekommen ist.
+  const neueVorschau = await kassensturzGesamtVorschau();
+  const nachtraeglicheBuchungen = rund2(neueVorschau.soll - soll);
+
+  // Speichere mit dem Zeitpunkt der Momentaufnahme, nicht des Speicherns.
+  // Begründung: Der nächste Kassensturz zählt alle Buchungen mit
+  // datum > <datum der letzten Zählung>. Stünde hier der Speicher-Zeitpunkt,
+  // fielen alle Buchungen zwischen Momentaufnahme und Speichern in keinen
+  // Abrechnungszeitraum - sie wären aus dem Soll dauerhaft verschwunden.
+  // Mit dem Zeitpunkt der Momentaufnahme schließen die Zeiträume lückenlos.
   await put("kassenstuerze", {
     id: ksId,
-    datum: jetzt(),
+    datum: vorschau.stand,
     veranstaltung: KASSENSTURZ_VERANSTALTUNG_GESAMT,
     anfangsbestand,
     erwarteter_betrag: soll,
@@ -1208,6 +1243,7 @@ export async function kassensturzGesamtDurchfuehren(
     gezaehlterBetrag: gezaehlterBetragGesamt,
     differenz,
     naechsterStartbetrag: naechsterStartbetragGesamt,
+    nachtraeglicheBuchungen,
   };
 }
 
