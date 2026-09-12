@@ -498,6 +498,13 @@ table.liste td.fb-status-in_bearbeitung {
   font-weight: 700;
 }
 
+/* Runde 46: Summenzeile je Kasse in der Monatsabrechnung (unter den beiden
+   Warengruppen-Zeilen Getränke/Speisen) - hebt sich leicht ab, damit man
+   Einzelzeile und Summe im Ausdruck auseinanderhalten kann. */
+tr.summe td {
+  background: #eef1f8;
+}
+
 /* -------------------- Kassensturz -------------------- */
 .kennzahl-zeile {
   display: flex;

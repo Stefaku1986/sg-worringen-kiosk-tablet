@@ -1692,6 +1692,76 @@ function wareneinsatzAusPositionen(positionen, preise) {
   return ergebnis;
 }
 
+// Runde 46: Warengruppen der Monatsabrechnung - dieselben beiden Werte wie
+// in produkte.kategorie, in der Reihenfolge, in der sie im Bericht stehen.
+// Pendant zu repository.KATEGORIEN.
+export const KATEGORIEN = ["Getraenk", "Speise"];
+const MONATS_FELDER = ["erloes", "mwst_7", "mwst_19", "gewinn", "pfand", "wareneinsatz"];
+
+// Runde 46: Erst je Kasse UND Warengruppe summieren; die Werte je Kasse sind
+// danach bewusst die Summe ihrer beiden Warengruppen-Zeilen, damit die
+// gedruckte Tabelle auf den Cent genau aufgeht (haette man beides unabhaengig
+// gerundet, koennte die Summenzeile um einen Cent abweichen).
+// Pendant zum entsprechenden Block in repository.monatsabrechnung().
+function auswertungNachKategorie(positionen, preise) {
+  const roh = {};
+  for (const v of VERANSTALTUNGEN) {
+    roh[v] = {};
+    for (const k of KATEGORIEN) {
+      roh[v][k] = { erloes: 0, mwst_7: 0, mwst_19: 0, netto: 0, pfand: 0, wareneinsatz: 0 };
+    }
+  }
+  for (const p of positionen) {
+    if (!(p.veranstaltung in roh)) continue;
+    // Faellt ein Produkt einmal weg, landet die Position unter "Getraenk" -
+    // sie geht so nie verloren.
+    const kategorie = KATEGORIEN.includes(p.produkt?.kategorie) ? p.produkt.kategorie : "Getraenk";
+    const d = roh[p.veranstaltung][kategorie];
+    const brutto = p.menge * p.einzelpreis;
+    const mwst = mwstBetrag(p.einzelpreis, p.mwst_satz) * p.menge;
+    d.erloes += brutto;
+    d.netto += brutto - mwst;
+    d.pfand += p.menge * (p.pfand_betrag || 0);
+    if (Math.round(p.mwst_satz) === 7) d.mwst_7 += mwst;
+    else d.mwst_19 += mwst;
+    // Wie in wareneinsatzAusPositionen(): Pfandrueckgaben sind kein Warenverkauf.
+    if (!p.ist_pfandrueckgabe) d.wareneinsatz += p.menge * (preise[p.produkt_id] || 0);
+  }
+
+  const jeKasseKategorie = {};
+  for (const v of VERANSTALTUNGEN) {
+    jeKasseKategorie[v] = {};
+    for (const k of KATEGORIEN) {
+      const d = roh[v][k];
+      const w = {
+        erloes: rund2(d.erloes),
+        mwst_7: rund2(d.mwst_7),
+        mwst_19: rund2(d.mwst_19),
+        pfand: rund2(d.pfand),
+        wareneinsatz: rund2(d.wareneinsatz),
+      };
+      w.gewinn = rund2(rund2(d.netto) - w.wareneinsatz);
+      jeKasseKategorie[v][k] = w;
+    }
+  }
+  const summiere = (quellen) => {
+    const ergebnis = {};
+    for (const feld of MONATS_FELDER) {
+      ergebnis[feld] = rund2(quellen.reduce((s, q) => s + q[feld], 0));
+    }
+    return ergebnis;
+  };
+  const jeKasse = {};
+  for (const v of VERANSTALTUNGEN) {
+    jeKasse[v] = summiere(KATEGORIEN.map((k) => jeKasseKategorie[v][k]));
+  }
+  const gesamtJeKategorie = {};
+  for (const k of KATEGORIEN) {
+    gesamtJeKategorie[k] = summiere(VERANSTALTUNGEN.map((v) => jeKasseKategorie[v][k]));
+  }
+  return { jeKasse, jeKasseKategorie, gesamtJeKategorie };
+}
+
 // Runde 45: Wert der aktuell noch im Kiosk liegenden Ware (Bestand x
 // tatsaechlichem Einkaufspreis pro Stueck) - Pendant zu
 // repository.lagerwert_gesamt, rein informativ neben dem Gewinn.
@@ -2086,7 +2156,6 @@ export async function wareneinkaufGesamt() {
 export async function monatsabrechnung(jahr, monat) {
   const monatStr = `${String(jahr).padStart(4, "0")}-${String(monat).padStart(2, "0")}`;
   const positionenAlle = await positionenMitKasse(monatStr);
-  const jeKasse = await auswertungAusPositionen(positionenAlle);
 
   const kassenstuerzeAlle = await getAll("kassenstuerze");
   const kassensturzHistorie = kassenstuerzeAlle
@@ -2127,14 +2196,15 @@ export async function monatsabrechnung(jahr, monat) {
   // (analog zu auswertungJeKasse), nicht mehr der komplette Wareneinkauf
   // des Monats (Runde 44) - sonst waere jeder Monat mit einer groesseren
   // Lieferung faelschlich ein Verlustmonat.
+  // Runde 46: je Kasse UND Warengruppe (Getraenke/Speisen) in einem Schritt,
+  // siehe auswertungNachKategorie().
   const preiseMonat = await einkaufspreiseJeProdukt();
-  const wareneinsatzMonat = wareneinsatzAusPositionen(positionenAlle, preiseMonat);
-  for (const v of VERANSTALTUNGEN) {
-    jeKasse[v].wareneinsatz = wareneinsatzMonat[v];
-    jeKasse[v].gewinn = rund2(jeKasse[v].gewinn - wareneinsatzMonat[v]);
-  }
+  const { jeKasse, jeKasseKategorie, gesamtJeKategorie } = auswertungNachKategorie(
+    positionenAlle,
+    preiseMonat
+  );
   const gesamtWareneinsatz = rund2(
-    VERANSTALTUNGEN.reduce((s, v) => s + wareneinsatzMonat[v], 0)
+    VERANSTALTUNGEN.reduce((s, v) => s + jeKasse[v].wareneinsatz, 0)
   );
 
   const gesamtErloes = rund2(VERANSTALTUNGEN.reduce((s, v) => s + jeKasse[v].erloes, 0));
@@ -2155,6 +2225,12 @@ export async function monatsabrechnung(jahr, monat) {
     jahr,
     monat,
     je_kasse: jeKasse,
+    // Runde 46: dieselben Kennzahlen nach Warengruppe -
+    // {"Jugend": {"Getraenk": {...}, "Speise": {...}}, ...}. Die Werte je
+    // Kasse oben sind exakt die Summe dieser beiden Zeilen.
+    je_kasse_kategorie: jeKasseKategorie,
+    // Ueber beide Kassen summiert - {"Getraenk": {...}, "Speise": {...}}.
+    gesamt_je_kategorie: gesamtJeKategorie,
     schiedsrichter_je_kasse: schiedsrichterJeKasse,
     kassensturz_historie: kassensturzHistorie,
     entnahme_je_kasse: entnahmeJeKasse,

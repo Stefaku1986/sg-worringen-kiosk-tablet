@@ -2930,60 +2930,76 @@ async function monatsabrechnungAnzeigen() {
   auMonatErgebnisKarte.style.display = "";
 }
 
+const KATEGORIE_BERICHT = [
+  ["Getraenk", "Getränke"],
+  ["Speise", "Speisen"],
+];
+
+// Runde 46: gekuerzter Monatsbericht - Erloes/MwSt./Gewinn je Kasse UND
+// Warengruppe, Wareneinkauf nur noch als Monatssumme, Schiedsrichter und
+// Zusammenfassung. Die frueheren Einzelaufstellungen (Verkaeufe je Produkt,
+// Wareneinkauf je Produkt, Abschreibungen) sind auf Wunsch raus - der
+// Ausdruck war damit rund fuenf Seiten lang. Spiegelt druck.monatsabrechnung_html().
 function monatsabrechnungHtml(m) {
-  const jeKasseZeilen = VERANSTALTUNGEN.map((v) => {
-    const k = m.je_kasse[v];
-    return `<tr><td>${KASSE_LABEL[v] ?? v}</td><td>${euro(k.erloes)}</td><td>${euro(k.mwst_7)}</td><td>${euro(k.mwst_19)}</td><td>${euro(k.gewinn)}</td><td>${euro(k.wareneinsatz)}</td><td>${euro(k.pfand)}</td></tr>`;
-  }).join("");
+  const werteZellen = (w) =>
+    [w.erloes, w.mwst_7, w.mwst_19, w.wareneinsatz, w.gewinn, w.pfand]
+      .map((betrag) => `<td style="text-align:right">${euro(betrag)}</td>`)
+      .join("");
 
-  const verkaeufeZeilen =
-    m.verkaeufe_je_produkt
-      .map(
-        (v) =>
-          `<tr><td>${KASSE_LABEL[v.veranstaltung] ?? v.veranstaltung}</td><td>${v.produkt_name}</td><td>${v.anzahl}</td><td>${euro(v.betrag)}</td></tr>`
-      )
-      .join("") || `<tr><td colspan="4">Keine Verkäufe in diesem Monat.</td></tr>`;
+  const jeKat = m.je_kasse_kategorie || {};
+  let jeKasseZeilen = "";
+  for (const v of VERANSTALTUNGEN) {
+    const label = KASSE_LABEL[v] ?? v;
+    for (const [schluessel, anzeige] of KATEGORIE_BERICHT) {
+      const w = jeKat[v]?.[schluessel];
+      if (!w) continue;
+      jeKasseZeilen += `<tr><td>${v} · ${anzeige}</td>${werteZellen(w)}</tr>`;
+    }
+    jeKasseZeilen += `<tr class="summe"><td><b>${label} gesamt</b></td>${werteZellen(m.je_kasse[v])}</tr>`;
+  }
 
-  const wareneinkaufZeilen =
-    m.wareneinkauf
-      .map(
-        (w) =>
-          `<tr><td>${w.name}${w.geschaetzt ? " (geschätzt)" : ""}</td><td>${w.menge}</td><td>${euro(w.netto)}</td><td>${euro(w.mwst)}</td><td>${euro(w.brutto)}</td></tr>`
-      )
-      .join("") || `<tr><td colspan="5">Kein Wareneinkauf in diesem Monat.</td></tr>`;
+  const gesamtKat = m.gesamt_je_kategorie || {};
+  const kategorieKennzahlen = KATEGORIE_BERICHT.filter(([k]) => gesamtKat[k])
+    .map(
+      ([k, anzeige]) => `
+    <div class="kennzahl-zeile"><span>${anzeige} – Erlös (brutto)</span><span>${euro(gesamtKat[k].erloes)}</span></div>
+    <div class="kennzahl-zeile"><span>${anzeige} – Wareneinsatz</span><span>${euro(gesamtKat[k].wareneinsatz)}</span></div>
+    <div class="kennzahl-zeile"><span>${anzeige} – Gewinn</span><span>${euro(gesamtKat[k].gewinn)}</span></div>`
+    )
+    .join("");
 
-  const abschreibungZeilen =
-    m.abschreibungen
-      .map((a) => `<tr><td>${a.name}</td><td>${a.grund}</td><td>${a.menge}</td><td>${euro(a.wert)}</td></tr>`)
-      .join("") || `<tr><td colspan="4">Keine Abschreibungen in diesem Monat.</td></tr>`;
+  const srZeilen = VERANSTALTUNGEN.map(
+    (v) =>
+      `<tr><td>${KASSE_LABEL[v] ?? v}</td><td style="text-align:right">${euro(m.schiedsrichter_je_kasse[v] || 0)}</td></tr>`
+  ).join("");
 
   return `
-    <h2>Je Kasse</h2>
-    <table><thead><tr><th>Kasse</th><th>Umsatz</th><th>MwSt. 7%</th><th>MwSt. 19%</th><th>Gewinn</th><th>Wareneinsatz (verkaufte Ware)</th><th>Offenes Pfand</th></tr></thead><tbody>${jeKasseZeilen}</tbody></table>
-    <p class="hinweis">„Wareneinsatz“ ist der Einkaufswert der in diesem Monat tatsächlich verkauften Stücke und im Gewinn bereits abgezogen – nicht der gesamte Wareneinkauf des Monats (siehe unten). Eingekaufte, aber noch nicht verkaufte Ware liegt als Warenwert im Kiosk.</p>
-    <div class="kennzahl-zeile"><span>Gesamt-Umsatz</span><span>${euro(m.gesamt_erloes)}</span></div>
-    <div class="kennzahl-zeile"><span>Gesamt-Gewinn</span><span>${euro(m.gesamt_gewinn)}</span></div>
-    <div class="kennzahl-zeile"><span>Wareneinsatz (verkaufte Ware)</span><span>${euro(m.gesamt_wareneinsatz)}</span></div>
-    <div class="kennzahl-zeile"><span>Wareneinkauf netto (bezahlt)</span><span>${euro(m.gesamt_wareneinkauf_netto)}</span></div>
+    <h2>Je Kasse und Warengruppe</h2>
+    <table><thead><tr><th>Kasse</th><th>Erlös</th><th>MwSt. 7%</th><th>MwSt. 19%</th><th>Wareneinsatz</th><th>Gewinn</th><th>Pfand</th></tr></thead><tbody>${jeKasseZeilen}</tbody></table>
+    <p class="hinweis">„Wareneinsatz“ ist der Einkaufswert der in diesem Monat tatsächlich verkauften Stücke und im Gewinn bereits abgezogen – nicht der gesamte Wareneinkauf des Monats. Pfand ist eine Kaution, kein Erlös, und fließt nicht in den Gewinn ein.</p>
+
+    <h2>Wareneinkauf des Monats (Summe)</h2>
+    ${m.wareneinkauf_teilweise_geschaetzt ? '<p class="hinweis">Für einzelne Wareneingänge wurde kein Preis erfasst – dort wurde der am Produkt hinterlegte Einkaufspreis geschätzt.</p>' : ""}
+    <table><thead><tr><th>Menge</th><th>Netto</th><th>MwSt. (Vorsteuer)</th><th>Brutto</th></tr></thead><tbody>
+      <tr><td>${m.gesamt_menge_eingekauft} Stück</td><td style="text-align:right">${euro(m.gesamt_wareneinkauf_netto)}</td><td style="text-align:right">${euro(m.gesamt_vorsteuer)}</td><td style="text-align:right">${euro(m.gesamt_wareneinkauf_brutto)}</td></tr>
+    </tbody></table>
+
+    <h2>Schiedsrichter-Auszahlungen</h2>
+    <table><thead><tr><th>Kasse</th><th>Betrag</th></tr></thead><tbody>${srZeilen}</tbody></table>
+
+    <h2>Zusammenfassung</h2>
+    <div class="kennzahl-zeile"><span>Gesamterlös (brutto)</span><span>${euro(m.gesamt_erloes)}</span></div>
+    <div class="kennzahl-zeile"><span>Verkaufte Menge insgesamt</span><span>${m.gesamt_menge_verkauft} Stück</span></div>
+    <div class="kennzahl-zeile"><span>Gesamtgewinn (nach Wareneinsatz)</span><span>${euro(m.gesamt_gewinn)}</span></div>
+    <div class="kennzahl-zeile"><span>Pfand insgesamt (kein Erlös)</span><span>${euro(m.gesamt_pfand)}</span></div>
+    ${kategorieKennzahlen}
     <div class="kennzahl-zeile"><span>Schiedsrichter-Auszahlungen</span><span>${euro(m.gesamt_schiedsrichter)}</span></div>
-    <div class="kennzahl-zeile"><span>Ergebnis nach Schiedsrichtern</span><span>${euro(m.gesamt_ergebnis_nach_schiedsrichter)}</span></div>
     <div class="kennzahl-zeile"><span>Sonstige Ausgaben</span><span>${euro(m.gesamt_sonstige_ausgaben)}</span></div>
     <div class="kennzahl-zeile gesamt"><span>Ergebnis nach Ausgaben</span><span>${euro(m.gesamt_ergebnis_nach_ausgaben)}</span></div>
+    <div class="kennzahl-zeile"><span>Wareneinsatz verkaufter Ware</span><span>${euro(m.gesamt_wareneinsatz)}</span></div>
     <div class="kennzahl-zeile"><span>Umsatzsteuer</span><span>${euro(m.gesamt_umsatzsteuer)}</span></div>
     <div class="kennzahl-zeile"><span>Vorsteuer (Wareneinkauf)</span><span>${euro(m.gesamt_vorsteuer)}</span></div>
-    <div class="kennzahl-zeile"><span>MwSt.-Zahllast</span><span>${euro(m.mwst_zahllast)}</span></div>
-    <div class="kennzahl-zeile"><span>Lieferanten-Pfand (Saldo)</span><span>${euro(m.lieferanten_pfand.saldo)}</span></div>
-    <div class="kennzahl-zeile"><span>Abschreibungen (Wert)</span><span>${euro(m.gesamt_abschreibungen_wert)}</span></div>
-
-    <h2>Verkäufe je Produkt</h2>
-    <table><thead><tr><th>Kasse</th><th>Produkt</th><th>Anzahl</th><th>Erlös</th></tr></thead><tbody>${verkaeufeZeilen}</tbody></table>
-
-    <h2>Wareneinkauf</h2>
-    ${m.wareneinkauf_teilweise_geschaetzt ? '<p class="hinweis">„geschätzt“ = kein Einzelpreis erfasst, es wurde der aktuelle Einkaufspreis des Produkts verwendet.</p>' : ""}
-    <table><thead><tr><th>Produkt</th><th>Menge</th><th>Netto</th><th>MwSt.</th><th>Brutto</th></tr></thead><tbody>${wareneinkaufZeilen}</tbody></table>
-
-    <h2>Abschreibungen</h2>
-    <table><thead><tr><th>Produkt</th><th>Grund</th><th>Menge</th><th>Wert</th></tr></thead><tbody>${abschreibungZeilen}</tbody></table>
+    <div class="kennzahl-zeile gesamt"><span>MwSt.-Zahllast</span><span>${euro(m.mwst_zahllast)}</span></div>
   `;
 }
 
