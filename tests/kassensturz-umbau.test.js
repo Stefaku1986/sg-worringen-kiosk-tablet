@@ -10,15 +10,44 @@
 import "fake-indexeddb/auto";
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { openDb, put, neueId, geraetId } from "../js/db.js";
+import { openDb, put, neueId, geraetId, ersetzeAlle } from "../js/db.js";
 import {
   kassensturzGesamtVorschau,
   kassensturzGesamtDurchfuehren,
   kassensturzHistorie,
 } from "../js/repo.js";
 
-test("kassensturz-umbau: Ohne Zeile ab Stichtag ist anfangsbestand gleich Grundbestand", async () => {
+// 12.09.2026: Alle Tests dieser Datei teilen sich EINE fake-indexeddb (node
+// --test trennt nur je Datei, nicht je Test). Das hat eine Zeitbombe erzeugt:
+// kassensturzGesamtDurchfuehren() speichert die Zeile mit vorschau.stand, also
+// mit der ECHTEN aktuellen Uhrzeit. Der Test "Nach kassensturzGesamtDurchfuehren
+// existiert 'Gesamt'-Zeile" liess dadurch eine Zeile mit dem heutigen Datum und
+// Uebertrag 244 € zurueck. Der darauf folgende Test legte Zeilen mit den festen
+// Daten 15.08. und 10.09.2026 an und erwartete 250 € als Uebertrag - das galt
+// aber nur, solange das echte Datum VOR dem 10.09.2026 lag. Ab dem 11.09.2026
+// war die Zeile aus dem Vortest die neueste, und der Test schlug mit 244 statt
+// 250 fehl. Die Anwendung war nie fehlerhaft: letzterKassensturzGesamt() nimmt
+// korrekt die neueste "Gesamt"-Zeile.
+//
+// Konsequenz: jeder Test raeumt vorher auf, statt auf dem Zustand des
+// vorherigen aufzubauen. Wer hier einen Test ergaenzt, ruft frischeKasse()
+// als Erstes auf und legt alles, was er braucht, selbst an.
+async function frischeKasse() {
   await openDb();
+  for (const store of [
+    "kassenstuerze",
+    "kassiervorgaenge",
+    "schiedsrichter_auszahlungen",
+    "sonstige_ausgaben",
+    "bargeld_einzahlungen",
+    "bargeld_entnahmen",
+  ]) {
+    await ersetzeAlle(store, []);
+  }
+}
+
+test("kassensturz-umbau: Ohne Zeile ab Stichtag ist anfangsbestand gleich Grundbestand", async () => {
+  await frischeKasse();
 
   const vorschau = await kassensturzGesamtVorschau();
   // KASSENSTURZ_GRUNDBESTAND = 169.00
@@ -30,7 +59,7 @@ test("kassensturz-umbau: Ohne Zeile ab Stichtag ist anfangsbestand gleich Grundb
 });
 
 test("kassensturz-umbau: Alte Zeile vor Stichtag beeinflusst nicht anfangsbestand, aber seit", async () => {
-  await openDb();
+  await frischeKasse();
 
   const gid = await geraetId();
 
@@ -83,7 +112,7 @@ test("kassensturz-umbau: Alte Zeile vor Stichtag beeinflusst nicht anfangsbestan
 });
 
 test("kassensturz-umbau: Nach kassensturzGesamtDurchfuehren existiert 'Gesamt'-Zeile", async () => {
-  await openDb();
+  await frischeKasse();
 
   const gid = await geraetId();
 
@@ -122,7 +151,7 @@ test("kassensturz-umbau: Nach kassensturzGesamtDurchfuehren existiert 'Gesamt'-Z
 });
 
 test("kassensturz-umbau: Nachfolgender Kassensturz nutzt vorherigen Übertrag", async () => {
-  await openDb();
+  await frischeKasse();
 
   const gid = await geraetId();
 
@@ -173,7 +202,7 @@ test("kassensturz-umbau: Nachfolgender Kassensturz nutzt vorherigen Übertrag", 
 });
 
 test("kassensturz-umbau: Negativer gezählter Betrag wirft Fehler", async () => {
-  await openDb();
+  await frischeKasse();
 
   const vorschau = await kassensturzGesamtVorschau();
 
@@ -189,7 +218,7 @@ test("kassensturz-umbau: Negativer gezählter Betrag wirft Fehler", async () => 
 });
 
 test("kassensturz-umbau: Negativer Startbetrag wirft Fehler", async () => {
-  await openDb();
+  await frischeKasse();
 
   const vorschau = await kassensturzGesamtVorschau();
 
@@ -205,7 +234,7 @@ test("kassensturz-umbau: Negativer Startbetrag wirft Fehler", async () => {
 });
 
 test("kassensturz-umbau: sollNegativ ist true bei negativem Soll", async () => {
-  await openDb();
+  await frischeKasse();
 
   const gid = await geraetId();
 
@@ -242,15 +271,43 @@ test("kassensturz-umbau: sollNegativ ist true bei negativem Soll", async () => {
 });
 
 test("kassensturz-umbau: kassensturzHistorie enthält nur Zeilen ab Stichtag", async () => {
-  await openDb();
+  await frischeKasse();
 
   const gid = await geraetId();
 
-  // Die Voraussetzung: Es gibt alte Zeilen vor Stichtag in der Datenbank
-  // (von vorherigen Tests), aber kassensturzHistorie soll sie nicht zeigen
-
-  // Alle Zeilen in der Datenbank
-  // (diese werden von openDb() geladen, nicht neu angelegt)
+  // Voraussetzung: eine Zeile VOR und eine Zeile NACH dem Stichtag. Beide legt
+  // dieser Test selbst an - frueher verliess er sich auf Reste der vorherigen
+  // Tests, wodurch er nichts mehr prueft, sobald dort etwas anders laeuft.
+  await put("kassenstuerze", {
+    id: neueId(),
+    datum: "2026-08-15T10:00:00+00:00", // vor Stichtag -> darf NICHT erscheinen
+    veranstaltung: "Jugend",
+    anfangsbestand: 100.00,
+    erwarteter_betrag: 200.00,
+    gezaehlter_betrag: 210.00,
+    differenz: 10.00,
+    naechster_startbetrag: 210.00,
+    rechner: "Test",
+    geraet_id: gid,
+    synced: false,
+    synced_at: null,
+    benutzer: "test",
+  });
+  await put("kassenstuerze", {
+    id: neueId(),
+    datum: "2026-09-10T10:00:00+00:00", // ab Stichtag -> MUSS erscheinen
+    veranstaltung: "Gesamt",
+    anfangsbestand: 220.00,
+    erwarteter_betrag: 250.00,
+    gezaehlter_betrag: 250.00,
+    differenz: 0.00,
+    naechster_startbetrag: 250.00,
+    rechner: "Test",
+    geraet_id: gid,
+    synced: false,
+    synced_at: null,
+    benutzer: "test",
+  });
 
   const historie = await kassensturzHistorie(100);
 
@@ -262,10 +319,9 @@ test("kassensturz-umbau: kassensturzHistorie enthält nur Zeilen ab Stichtag", a
     );
   }
 
-  // Es sollte mindestens eine "Gesamt"-Zeile geben (von den vorherigen Tests)
-  const gesamtZeilen = historie.filter((k) => k.veranstaltung === "Gesamt");
-  assert.ok(
-    gesamtZeilen.length >= 0,
-    "Es sollte 'Gesamt'-Zeilen geben"
-  );
+  // Die Zeile ab Stichtag ist da, die davor nicht. (Die frühere Fassung prüfte
+  // hier "length >= 0" - das ist immer wahr und prüfte in Wahrheit nichts.)
+  assert.strictEqual(historie.length, 1, "nur die Zeile ab Stichtag gehört in die Historie");
+  assert.strictEqual(historie[0].veranstaltung, "Gesamt");
+  assert.strictEqual(historie[0].datum, "2026-09-10T10:00:00+00:00");
 });
