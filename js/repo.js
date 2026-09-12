@@ -1875,25 +1875,50 @@ export async function auswertungJeKasse() {
 //     "Jugend": {"menge": 13, "betrag": 26.00}  oder  {"menge": null, "betrag": 26.00},
 //     "Senioren": {"menge": 14, "betrag": 28.00}  oder  {"menge": null, "betrag": 28.00},
 //   }
+// Runde 57 (Feedback "Pfandmarken Zaehler", Miriam Kuehl, 08.09.2026):
+// Die Marken werden GEZAEHLT statt aus dem offenen Pfandbetrag
+// zurueckgerechnet. Die alte Fassung teilte den Euro-Betrag durch den
+// Pfandbetrag der Produkte und lieferte null, sobald es mehr als einen
+// Pfandbetrag gab - bei uns 1,00 € und 2,00 €, die Anzeige zeigte also nie
+// eine Stueckzahl. Aus dem Betrag allein ist sie auch gar nicht ermittelbar:
+// 2,00 € offen koennen eine 2-€-Marke oder zwei 1-€-Marken sein.
+//
+// Gezaehlt wird ueber die Positionen: pfand_betrag > 0 ist eine Ausgabe,
+// pfand_betrag < 0 eine Ruecknahme; Stornos tragen ihre negative Menge und
+// gehen automatisch gegen. Positionen mit erlassenem Pfand ("Marke
+// vorhanden", Runde 38) stehen mit pfand_betrag = 0 da und zaehlen
+// korrekterweise nicht mit. Ein negativer Wert je Markenwert bleibt sichtbar -
+// er zeigt, dass mehr Marken dieses Werts zurueckgenommen als ausgegeben
+// wurden. "betrag" ist weiterhin der offene Pfandbetrag aus
+// auswertungJeKasse() und damit um verbuchtes Pfand vermindert; die
+// Markenzaehlung ist es nicht (verbuchtes Pfand laesst sich keinem Markenwert
+// zuordnen). Pendant zu repository.offene_pfandmarken_je_kasse.
 export async function offenePfandmarkenJeKasse() {
-  const alle = await getAll("produkte");
-  const pfandBetraege = alle
-    .filter((p) => p.aktiv && p.pfand_betrag > 0)
-    .map((p) => p.pfand_betrag);
-
-  // Entferne Duplikate und prüfe, ob genau ein eindeutiger Wert vorhanden ist
-  const eindeutig = [...new Set(pfandBetraege)];
-  const pfandBetragFuerBerechnung = eindeutig.length === 1 ? eindeutig[0] : null;
+  const positionen = await positionenMitKasse();
+  const jeWert = {};
+  for (const v of VERANSTALTUNGEN) jeWert[v] = new Map();
+  for (const p of positionen) {
+    if (!p.pfand_betrag) continue;
+    const werte = jeWert[p.veranstaltung];
+    if (!werte) continue;
+    const wert = rund2(Math.abs(p.pfand_betrag));
+    const richtung = p.pfand_betrag > 0 ? 1 : -1;
+    werte.set(wert, (werte.get(wert) || 0) + richtung * p.menge);
+  }
 
   const auswertung = await auswertungJeKasse();
   const ergebnis = {};
   for (const kasse of VERANSTALTUNGEN) {
-    const pfandBetrag = auswertung[kasse]?.pfand ?? 0.0;
-    let menge = null;
-    if (pfandBetragFuerBerechnung !== null && pfandBetragFuerBerechnung > 0) {
-      menge = Math.round(pfandBetrag / pfandBetragFuerBerechnung);
-    }
-    ergebnis[kasse] = { menge, betrag: rund2(pfandBetrag) };
+    // Markenwerte ohne offene Marken gar nicht auffuehren - sonst stuende in
+    // der Oberflaeche dauerhaft "0 x 1,00 €" herum.
+    const sortiert = [...jeWert[kasse].entries()]
+      .filter(([, anzahl]) => anzahl !== 0)
+      .sort((a, b) => a[0] - b[0]);
+    ergebnis[kasse] = {
+      menge: sortiert.reduce((s, [, anzahl]) => s + anzahl, 0),
+      betrag: rund2(auswertung[kasse]?.pfand ?? 0),
+      jeWert: sortiert,
+    };
   }
   return ergebnis;
 }

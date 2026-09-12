@@ -1,274 +1,192 @@
 /**
- * Runde 53 Etappe 5.2 (Tablet-Nachzug): Anzeige offener Pfandmarken
+ * Anzeige offener Pfandmarken im Reiter "Verkauf" (Runde 53, neu gefasst in
+ * Runde 57).
  *
- * Der Reiter "Verkauf" soll anzeigen, wie viele Pfandmarken für die aktive
- * Kasse noch im Umlauf sind, genauso wie die Windows-App. Die Rechenregel
- * muss identisch sein: Pfandbetrag / Pfandwert pro Marke, gerundet auf ganze
- * Stückzahlen. Bei mehreren verschiedenen Pfandbeträgen unter den aktiven
- * Produkten ist menge = null (nur Euro-Betrag anzeigen, um keine falschen
- * Stückzahlen zu erfinden).
+ * Runde 53 rechnete die Stueckzahl aus dem offenen Pfandbetrag zurueck
+ * (Betrag / Pfandwert pro Marke) und lieferte null, sobald es mehr als einen
+ * Pfandbetrag unter den aktiven Produkten gab. Genau das ist bei der SG der
+ * Fall (1,00 € und 2,00 €), die Anzeige zeigte also nie eine Stueckzahl -
+ * daher das Feedback "Pfandmarken Zaehler" (Miriam Kuehl, 08.09.2026).
+ *
+ * Runde 57 zaehlt die Marken stattdessen ueber die Positionen, getrennt je
+ * Markenwert. Aus dem Euro-Betrag allein waere die Stueckzahl auch gar nicht
+ * ermittelbar: 2,00 € offen koennen eine 2-€-Marke oder zwei 1-€-Marken sein.
  *
  * Tests:
- * - Verhaltenstests der neuen Funktion offenePfandmarkenJeKasse() mit echten
- *   Datenbanken (via fake-indexeddb)
- * - Strukturtests für die Anzeige in index.html und main.js
+ * - Verhaltenstests von offenePfandmarkenJeKasse() gegen eine echte Datenbank
+ *   (fake-indexeddb)
+ * - Strukturtests fuer die Anzeige in index.html und main.js
  */
 
 import "fake-indexeddb/auto";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { openDb, put, neueId, geraetId } from "../js/db.js";
-import {
-  offenePfandmarkenJeKasse,
-  kassiervorgangAbschliessen,
-  listeProdukte,
-} from "../js/repo.js";
-import { VERANSTALTUNGEN } from "../js/config.js";
+import { openDb, put, neueId, geraetId, ersetzeAlle } from "../js/db.js";
+import { offenePfandmarkenJeKasse, kassiervorgangAbschliessen } from "../js/repo.js";
+
+// Alle Tests einer Datei teilen sich EINE fake-indexeddb (node --test trennt
+// nur je Datei). Die Zaehlung laeuft ueber ALLE Positionen der Datenbank, also
+// muss jeder Test mit leerem Stand beginnen - sonst zaehlt er die Verkaeufe
+// der Vortests mit. (Dieselbe Falle wie in kassensturz-umbau.test.js.)
+async function frischeDb() {
+  await openDb();
+  for (const store of ["positionen", "kassiervorgaenge", "produkte", "lagerbewegungen"]) {
+    await ersetzeAlle(store, []);
+  }
+}
+
+async function produktAnlegen(name, pfandBetrag, aktiv = true) {
+  const id = neueId();
+  await put("produkte", {
+    id,
+    name,
+    kategorie: "Getraenk",
+    mwst_satz: 19,
+    einkaufspreis: 0.5,
+    verkaufspreis: 2.0,
+    helferpreis: 2.0,
+    pfand_betrag: pfandBetrag,
+    aktiv,
+    datum: "2026-09-01T10:00:00Z",
+    benutzer: "test",
+    geraet_id: await geraetId(),
+    synced: false,
+    synced_at: null,
+  });
+  return id;
+}
 
 // ===== VERHALTENSTESTS =====
 
-test("pfandmarken-zaehler: Ein Pfandbetrag, offenes Pfand 26,00 € bei 2,00 € pro Marke = 13 Marken", async () => {
-  await openDb();
+test("pfandmarken-zaehler: zaehlt Marken je Wert, auch bei zwei Pfandbetraegen", async () => {
+  await frischeDb();
+  const gross = await produktAnlegen("Cola 0,33", 2.0);
+  const klein = await produktAnlegen("Wasser", 1.0);
 
-  // Produkt mit Pfand 2,00 EUR
-  const produktId = neueId();
-  await put("produkte", {
-    id: produktId,
-    name: "TestCola",
-    kategorie: "Getraenke",
-    mwst_satz: 19,
-    einkaufspreis: 0.50,
-    verkaufspreis: 2.50,
-    helferpreis: 2.50,
-    pfand_betrag: 2.00, // Ein einziger Pfandbetrag
-    aktiv: 1, // Aktiv!
-    aktualisiert_am: "2026-08-30T10:00:00Z",
-    geraet_id: await geraetId(),
-    synced: false,
-    synced_at: null,
-  });
-
-  // 13 Verkäufe mit je 2,00 EUR Pfand = 26,00 EUR offenes Pfand
-  const warenkorb = [
-    {
-      produktId,
-      name: "TestCola",
-      menge: 13,
-      einzelpreis: 2.50,
-      einkaufspreis: 0.50,
-      mwstSatz: 19,
-      istHelferpreis: false,
-      pfandBetrag: 2.00,
-      istPfandrueckgabe: false,
-    },
-  ];
-
-  // Gesamtbetrag: 13 * (2.50 + 2.00) = 13 * 4.50 = 58.50 EUR
-  await kassiervorgangAbschliessen("Jugend", warenkorb, 60.00, "test");
-
-  // Jetzt die Funktion aufrufen
-  const ergebnis = await offenePfandmarkenJeKasse();
-  const daten = ergebnis["Jugend"];
-
-  assert.ok(daten, "Jugend sollte in den Ergebnissen sein");
-  assert.strictEqual(daten.betrag, 26.00, "Betrag sollte 26,00 EUR sein");
-  assert.strictEqual(daten.menge, 13, "Menge sollte 13 Marken sein");
-});
-
-test("pfandmarken-zaehler: Zwei verschiedene Pfandbeträge => menge = null, aber betrag korrekt", async () => {
-  await openDb();
-
-  // Zwei Produkte mit unterschiedlichen Pfandbeträgen
-  const produktId1 = neueId();
-  const produktId2 = neueId();
-
-  await put("produkte", {
-    id: produktId1,
-    name: "TestCola",
-    kategorie: "Getraenke",
-    mwst_satz: 19,
-    einkaufspreis: 0.50,
-    verkaufspreis: 2.50,
-    helferpreis: 2.50,
-    pfand_betrag: 2.00, // Pfandbetrag A
-    aktiv: 1,
-    aktualisiert_am: "2026-08-30T10:00:00Z",
-    geraet_id: await geraetId(),
-    synced: false,
-    synced_at: null,
-  });
-
-  await put("produkte", {
-    id: produktId2,
-    name: "TestBier",
-    kategorie: "Getraenke",
-    mwst_satz: 19,
-    einkaufspreis: 1.00,
-    verkaufspreis: 4.00,
-    helferpreis: 4.00,
-    pfand_betrag: 0.50, // Anderer Pfandbetrag B
-    aktiv: 1,
-    aktualisiert_am: "2026-08-30T10:00:00Z",
-    geraet_id: await geraetId(),
-    synced: false,
-    synced_at: null,
-  });
-
-  // Verkauf: 10x Cola (2,00 EUR) + 5x Bier (0,50 EUR) = 20,00 + 2,50 = 22,50 EUR Pfand
-  const warenkorb = [
-    {
-      produktId: produktId1,
-      name: "TestCola",
-      menge: 10,
-      einzelpreis: 2.50,
-      einkaufspreis: 0.50,
-      mwstSatz: 19,
-      istHelferpreis: false,
-      pfandBetrag: 2.00,
-      istPfandrueckgabe: false,
-    },
-    {
-      produktId: produktId2,
-      name: "TestBier",
-      menge: 5,
-      einzelpreis: 4.00,
-      einkaufspreis: 1.00,
-      mwstSatz: 19,
-      istHelferpreis: false,
-      pfandBetrag: 0.50,
-      istPfandrueckgabe: false,
-    },
-  ];
-
-  // Gesamtbetrag: (10 * (2.50 + 2.00)) + (5 * (4.00 + 0.50)) = 45.00 + 22.50 = 67.50 EUR
-  await kassiervorgangAbschliessen("Senioren", warenkorb, 70.00, "test");
-
-  const ergebnis = await offenePfandmarkenJeKasse();
-  const daten = ergebnis["Senioren"];
-
-  assert.ok(daten, "Senioren sollte in den Ergebnissen sein");
-  assert.strictEqual(daten.betrag, 22.50, "Betrag sollte 22,50 EUR sein");
-  assert.strictEqual(
-    daten.menge,
-    null,
-    "Menge sollte null sein (mehrere verschiedene Pfandbeträge)"
+  await kassiervorgangAbschliessen(
+    "Jugend",
+    [
+      { produktId: gross, menge: 3, einzelpreis: 2.0, einkaufspreis: 0.5, mwstSatz: 19, pfandBetrag: 2.0 },
+      { produktId: klein, menge: 1, einzelpreis: 1.5, einkaufspreis: 0.3, mwstSatz: 19, pfandBetrag: 1.0 },
+    ],
+    20.0,
+    "test"
   );
+
+  const daten = (await offenePfandmarkenJeKasse()).Jugend;
+  // Frueher waere menge hier null gewesen (zwei verschiedene Pfandbetraege).
+  assert.deepStrictEqual(daten.jeWert, [[1.0, 1], [2.0, 3]]);
+  assert.strictEqual(daten.menge, 4);
+  assert.strictEqual(daten.betrag, 7.0);
 });
 
-test("pfandmarken-zaehler: Kein pfandpflichtiges aktives Produkt => menge === null", async () => {
-  await openDb();
+test("pfandmarken-zaehler: Ruecknahme senkt den Zaehler, Ueberhang bleibt sichtbar", async () => {
+  await frischeDb();
+  const klein = await produktAnlegen("Wasser", 1.0);
 
-  // Die Datenbank ist geteilt zwischen Tests. Die Kassiervorgänge aus Test 1 und 2
-  // haben bereits Pfand in der Datenbank. Um zu prüfen, dass OHNE aktive
-  // Pfandprodukte menge === null ist, nutzen wir einen anderen Weg: Wir setzen
-  // ALLE Produkte auf inaktiv und überprüfen, dass menge === null.
-  const alleProdukte = await listeProdukte(false); // inkl. inaktiver
-  for (const p of alleProdukte) {
-    if (p.aktiv) {
-      // Deaktiviere alle aktiven Produkte
-      await put("produkte", { ...p, aktiv: 0 });
-    }
-  }
+  await kassiervorgangAbschliessen(
+    "Jugend",
+    [{ produktId: klein, menge: 1, einzelpreis: 1.5, einkaufspreis: 0.3, mwstSatz: 19, pfandBetrag: 1.0 }],
+    5.0,
+    "test"
+  );
+  // Zwei Marken zurueck, obwohl nur eine ausgegeben wurde: der Zaehler muss -1
+  // zeigen statt den Fehler in einer Gesamtsumme verschwinden zu lassen.
+  await kassiervorgangAbschliessen(
+    "Jugend",
+    [{
+      produktId: klein, menge: 2, einzelpreis: 0.0, einkaufspreis: 0.0, mwstSatz: 19,
+      pfandBetrag: -1.0, istPfandrueckgabe: true,
+    }],
+    0.0,
+    "test"
+  );
 
-  // Rufe die Funktion auf: es gibt keine AKTIVEN Produkte mit Pfand,
-  // also muss menge === null sein, egal wie viel betrag existiert.
-  const ergebnis = await offenePfandmarkenJeKasse();
-
-  // Prüfe auf eine Kasse mit existierendem Pfand (von frühen Tests)
-  for (const kasse of Object.values(ergebnis)) {
-    if (kasse.betrag > 0) {
-      // Es existiert Pfand aus früheren Tests, aber da alle Produkte inaktiv sind,
-      // muss menge === null sein
-      assert.strictEqual(
-        kasse.menge,
-        null,
-        "menge sollte null sein, wenn es keine AKTIVEN Pfand-Produkte gibt"
-      );
-    }
-  }
-
-  // Stelle Produkte wieder her: Aktiviere das erste deaktivierte Produkt wieder
-  for (const p of alleProdukte) {
-    if (!p.aktiv) {
-      await put("produkte", { ...p, aktiv: 1 });
-      break; // Nur eins reaktivieren, damit andere Tests nicht gestört werden
-    }
-  }
+  const daten = (await offenePfandmarkenJeKasse()).Jugend;
+  assert.deepStrictEqual(daten.jeWert, [[1.0, -1]]);
+  assert.strictEqual(daten.menge, -1);
+  assert.strictEqual(daten.betrag, -1.0);
 });
 
-test("pfandmarken-zaehler: Deaktiviertes Produkt mit Pfand wird nicht berücksichtigt", async () => {
-  await openDb();
+test("pfandmarken-zaehler: erlassenes Pfand gibt keine Marke aus", async () => {
+  await frischeDb();
+  const gross = await produktAnlegen("Cola 0,33", 2.0);
 
-  // Die Datenbank ist geteilt: Um einen bekannten Ausgangszustand herzustellen,
-  // neutralisieren wir alle bestehenden Produkte (pfand_betrag = 0).
-  const alleProdukte = await listeProdukte(false); // inkl. inaktiver
-  for (const p of alleProdukte) {
-    await put("produkte", { ...p, pfand_betrag: 0 });
-  }
+  // "Marke vorhanden" (Runde 38) setzt den Pfandbetrag der Zeile auf 0 -
+  // es wird keine neue Marke ausgegeben, also darf auch nichts gezaehlt werden.
+  await kassiervorgangAbschliessen(
+    "Jugend",
+    [{
+      produktId: gross, menge: 1, einzelpreis: 2.0, einkaufspreis: 0.5, mwstSatz: 19,
+      pfandBetrag: 0, pfandErlassen: true,
+    }],
+    5.0,
+    "test"
+  );
 
-  // Anlegen: genau 1 aktives Produkt mit 2,00 EUR Pfand
-  const aktivProdId = neueId();
-  await put("produkte", {
-    id: aktivProdId,
-    name: "TestColaAktivOnly",
-    kategorie: "Getraenke",
-    mwst_satz: 19,
-    einkaufspreis: 0.50,
-    verkaufspreis: 2.50,
-    helferpreis: 2.50,
-    pfand_betrag: 2.00,
-    aktiv: 1,
-    aktualisiert_am: "2026-08-30T10:00:00Z",
-    geraet_id: await geraetId(),
-    synced: false,
-    synced_at: null,
-  });
+  const daten = (await offenePfandmarkenJeKasse()).Jugend;
+  assert.deepStrictEqual(daten.jeWert, []);
+  assert.strictEqual(daten.menge, 0);
+});
 
-  // Anlegen: genau 1 deaktiviertes Produkt mit abweichendem 0,80 EUR Pfand
-  const inaktivProdId = neueId();
-  await put("produkte", {
-    id: inaktivProdId,
-    name: "TestBierInaktivOnly",
-    kategorie: "Getraenke",
-    mwst_satz: 19,
-    einkaufspreis: 0.80,
-    verkaufspreis: 3.50,
-    helferpreis: 3.50,
-    pfand_betrag: 0.80,
-    aktiv: 0, // DEAKTIVIERT
-    aktualisiert_am: "2026-08-30T10:00:00Z",
-    geraet_id: await geraetId(),
-    synced: false,
-    synced_at: null,
-  });
+test("pfandmarken-zaehler: ohne pfandpflichtige Verkaeufe sind null Marken offen", async () => {
+  await frischeDb();
+  const ohne = await produktAnlegen("Kaffee", 0);
 
-  // Verkauf mit dem aktiven Produkt
-  const warenkorb = [
-    {
-      produktId: aktivProdId,
-      name: "TestColaAktivOnly",
-      menge: 10,
-      einzelpreis: 2.50,
-      einkaufspreis: 0.50,
-      mwstSatz: 19,
-      istHelferpreis: false,
-      pfandBetrag: 2.00,
-      istPfandrueckgabe: false,
-    },
-  ];
+  await kassiervorgangAbschliessen(
+    "Jugend",
+    [{ produktId: ohne, menge: 1, einzelpreis: 1.5, einkaufspreis: 0.3, mwstSatz: 19, pfandBetrag: 0 }],
+    2.0,
+    "test"
+  );
 
-  await kassiervorgangAbschliessen("Senioren", warenkorb, 50.00, "test");
+  const daten = (await offenePfandmarkenJeKasse()).Jugend;
+  // Frueher war das "unbekannt" (null), jetzt ist es eine richtige Antwort.
+  assert.strictEqual(daten.menge, 0);
+  assert.deepStrictEqual(daten.jeWert, []);
+});
 
-  const ergebnis = await offenePfandmarkenJeKasse();
-  const daten = ergebnis["Senioren"];
+test("pfandmarken-zaehler: deaktiviertes Produkt zaehlt weiter, die Marke ist ja draussen", async () => {
+  await frischeDb();
+  const alt = await produktAnlegen("Altes Bier", 2.0, false);
 
-  assert.ok(daten, "Senioren sollte in den Ergebnissen sein");
-  // menge sollte NICHT null sein: es gibt nur einen eindeutigen aktiven Pfandbetrag (2,00 EUR)
-  assert.ok(daten.menge !== null, "menge sollte nicht null sein (nur 1 aktiver Pfandbetrag: 2,00 EUR)");
-  // Das Verhältnis menge = betrag / 2.00 muss passen
-  const erwartete_menge = Math.round(daten.betrag / 2.00);
-  assert.strictEqual(daten.menge, erwartete_menge, `menge sollte ${erwartete_menge} sein (betrag / 2,00)`);
+  await kassiervorgangAbschliessen(
+    "Senioren",
+    [{ produktId: alt, menge: 2, einzelpreis: 2.0, einkaufspreis: 0.5, mwstSatz: 19, pfandBetrag: 2.0 }],
+    10.0,
+    "test"
+  );
+
+  // Bewusste Verhaltensaenderung gegenueber Runde 53: dort bestimmten nur
+  // AKTIVE Produkte die Rechnung. Eine Marke verschwindet aber nicht, weil das
+  // Produkt aus dem Sortiment genommen wurde - der Kunde kann sie weiter
+  // einloesen, und genau darum muss sie im Zaehler stehen.
+  const daten = (await offenePfandmarkenJeKasse()).Senioren;
+  assert.deepStrictEqual(daten.jeWert, [[2.0, 2]]);
+  assert.strictEqual(daten.menge, 2);
+});
+
+test("pfandmarken-zaehler: Kassen werden getrennt gezaehlt", async () => {
+  await frischeDb();
+  const gross = await produktAnlegen("Cola 0,33", 2.0);
+
+  await kassiervorgangAbschliessen(
+    "Jugend",
+    [{ produktId: gross, menge: 1, einzelpreis: 2.0, einkaufspreis: 0.5, mwstSatz: 19, pfandBetrag: 2.0 }],
+    5.0,
+    "test"
+  );
+  await kassiervorgangAbschliessen(
+    "Senioren",
+    [{ produktId: gross, menge: 4, einzelpreis: 2.0, einkaufspreis: 0.5, mwstSatz: 19, pfandBetrag: 2.0 }],
+    20.0,
+    "test"
+  );
+
+  const alle = await offenePfandmarkenJeKasse();
+  assert.deepStrictEqual(alle.Jugend.jeWert, [[2.0, 1]]);
+  assert.deepStrictEqual(alle.Senioren.jeWert, [[2.0, 4]]);
 });
 
 // ===== STRUKTURTESTS =====

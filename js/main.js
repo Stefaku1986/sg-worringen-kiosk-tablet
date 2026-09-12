@@ -1188,16 +1188,17 @@ async function aktualisierePfandmarkenAnzeige() {
   try {
     const pfandmarken = await repo.offenePfandmarkenJeKasse();
     const kasseName = session.getAktiveKasse();
-    const daten = pfandmarken[kasseName] || { menge: null, betrag: 0.0 };
-    const menge = daten.menge;
+    const daten = pfandmarken[kasseName] || { menge: 0, betrag: 0.0, jeWert: [] };
     const betrag = daten.betrag;
+    const jeWert = daten.jeWert || [];
 
-    let text;
-    if (menge !== null) {
-      text = `Offene Pfandmarken: ${menge} (${euro(betrag)})`;
-    } else {
-      text = `Offenes Pfand: ${euro(betrag)}`;
-    }
+    // Runde 57: je Markenwert getrennt, weil es 1-€- und 2-€-Marken gibt und
+    // eine blosse Gesamtzahl beides vermischen wuerde.
+    const text = jeWert.length
+      ? `Offene Pfandmarken: ${jeWert
+          .map(([wert, anzahl]) => `${anzahl} × ${euro(wert)}`)
+          .join(" · ")} (${euro(betrag)})`
+      : `Offene Pfandmarken: keine (${euro(betrag)})`;
     pfandmarkenAnzeige.textContent = text;
   } catch (exc) {
     console.error("Fehler beim Aktualisieren der Pfandmarken-Anzeige:", exc);
