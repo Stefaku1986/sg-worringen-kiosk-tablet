@@ -23,7 +23,12 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { openDb, put, neueId, geraetId, ersetzeAlle } from "../js/db.js";
-import { offenePfandmarkenJeKasse, kassiervorgangAbschliessen } from "../js/repo.js";
+import {
+  offenePfandmarkenJeKasse,
+  kassiervorgangAbschliessen,
+  pfandGewinnVerbuchen,
+  pfandGewinnStornieren,
+} from "../js/repo.js";
 
 // Alle Tests einer Datei teilen sich EINE fake-indexeddb (node --test trennt
 // nur je Datei). Die Zaehlung laeuft ueber ALLE Positionen der Datenbank, also
@@ -31,7 +36,13 @@ import { offenePfandmarkenJeKasse, kassiervorgangAbschliessen } from "../js/repo
 // der Vortests mit. (Dieselbe Falle wie in kassensturz-umbau.test.js.)
 async function frischeDb() {
   await openDb();
-  for (const store of ["positionen", "kassiervorgaenge", "produkte", "lagerbewegungen"]) {
+  for (const store of [
+    "positionen",
+    "kassiervorgaenge",
+    "produkte",
+    "lagerbewegungen",
+    "pfand_gewinn_verbuchungen",
+  ]) {
     await ersetzeAlle(store, []);
   }
 }
@@ -189,6 +200,88 @@ test("pfandmarken-zaehler: Kassen werden getrennt gezaehlt", async () => {
   assert.deepStrictEqual(alle.Senioren.jeWert, [[2.0, 4]]);
 });
 
+test("pfandmarken-zaehler: volle Gewinn-Verbuchung setzt den Zaehler zurueck", async () => {
+  await frischeDb();
+  const gross = await produktAnlegen("Cola 0,33", 2.0);
+  const klein = await produktAnlegen("Wasser", 1.0);
+
+  await kassiervorgangAbschliessen(
+    "Jugend",
+    [
+      { produktId: gross, menge: 3, einzelpreis: 2.0, einkaufspreis: 0.5, mwstSatz: 19, pfandBetrag: 2.0 },
+      { produktId: klein, menge: 1, einzelpreis: 1.5, einkaufspreis: 0.3, mwstSatz: 19, pfandBetrag: 1.0 },
+    ],
+    20.0,
+    "test"
+  );
+  const vorher = (await offenePfandmarkenJeKasse()).Jugend;
+  assert.strictEqual(vorher.betrag, 7.0);
+
+  const id = await pfandGewinnVerbuchen("Jugend", 7.0, "Saisonabschluss", "test");
+
+  const nachher = (await offenePfandmarkenJeKasse()).Jugend;
+  assert.deepStrictEqual(nachher.jeWert, []);
+  assert.strictEqual(nachher.menge, 0);
+  assert.strictEqual(nachher.betrag, 0);
+
+  // Storno stellt Marken UND Betrag wieder her
+  await pfandGewinnStornieren(id, "test");
+  const zurueck = (await offenePfandmarkenJeKasse()).Jugend;
+  assert.deepStrictEqual(zurueck.jeWert, [[1.0, 1], [2.0, 3]]);
+  assert.strictEqual(zurueck.betrag, 7.0);
+});
+
+test("pfandmarken-zaehler: volle Verbuchung raeumt auch einen negativen Stand ab", async () => {
+  await frischeDb();
+  const gross = await produktAnlegen("Cola 0,33", 2.0);
+  const klein = await produktAnlegen("Wasser", 1.0);
+
+  await kassiervorgangAbschliessen(
+    "Jugend",
+    [{ produktId: gross, menge: 2, einzelpreis: 2.0, einkaufspreis: 0.5, mwstSatz: 19, pfandBetrag: 2.0 }],
+    10.0,
+    "test"
+  );
+  await kassiervorgangAbschliessen(
+    "Jugend",
+    [{
+      produktId: klein, menge: 2, einzelpreis: 0.0, einkaufspreis: 0.0, mwstSatz: 19,
+      pfandBetrag: -1.0, istPfandrueckgabe: true,
+    }],
+    0.0,
+    "test"
+  );
+  const vorher = (await offenePfandmarkenJeKasse()).Jugend;
+  assert.deepStrictEqual(vorher.jeWert, [[1.0, -2], [2.0, 2]]);
+  assert.strictEqual(vorher.betrag, 2.0);
+
+  await pfandGewinnVerbuchen("Jugend", 2.0, null, "test");
+  const nachher = (await offenePfandmarkenJeKasse()).Jugend;
+  assert.deepStrictEqual(nachher.jeWert, []);
+  assert.strictEqual(nachher.betrag, 0);
+});
+
+test("pfandmarken-zaehler: Teilverbuchung schreibt den hoechsten Markenwert zuerst ab", async () => {
+  await frischeDb();
+  const gross = await produktAnlegen("Cola 0,33", 2.0);
+  const klein = await produktAnlegen("Wasser", 1.0);
+
+  await kassiervorgangAbschliessen(
+    "Senioren",
+    [
+      { produktId: gross, menge: 3, einzelpreis: 2.0, einkaufspreis: 0.5, mwstSatz: 19, pfandBetrag: 2.0 },
+      { produktId: klein, menge: 2, einzelpreis: 1.5, einkaufspreis: 0.3, mwstSatz: 19, pfandBetrag: 1.0 },
+    ],
+    20.0,
+    "test"
+  );
+  await pfandGewinnVerbuchen("Senioren", 4.0, "Teilbetrag", "test");
+
+  const daten = (await offenePfandmarkenJeKasse()).Senioren;
+  assert.deepStrictEqual(daten.jeWert, [[1.0, 2], [2.0, 1]]);
+  assert.strictEqual(daten.betrag, 4.0);
+});
+
 // ===== STRUKTURTESTS =====
 
 test("pfandmarken-zaehler: index.html enthält ein Element mit ID 'pfandmarken-anzeige'", () => {
@@ -303,4 +396,25 @@ test("pfandmarken-zaehler: pfandmarken-anzeige ist nur im Verkauf-Reiter sichtba
     /pfandmarkenAnzeige\.style\.display\s*=\s*name\s*===\s*"verkauf"/,
     "pfandmarkenAnzeige sollte nur im Verkauf-Reiter sichtbar sein"
   );
+});
+
+test("pfandmarken-zaehler: Betragsfeld der Gewinn-Verbuchung wird vorbelegt", () => {
+  const mainJs = readFileSync("js/main.js", "utf-8");
+  assert.match(
+    mainJs,
+    /async function pfandVerbuchenVorbelegen\(\)/,
+    "main.js sollte pfandVerbuchenVorbelegen() definieren"
+  );
+  assert.match(
+    mainJs,
+    /auPfandBetragFeld\.value = daten\.betrag > 0 \? deZahl\(daten\.betrag\)/,
+    "Das Betragsfeld sollte mit dem offenen Pfand vorbelegt werden"
+  );
+  assert.match(
+    mainJs,
+    /auPfandKasseAuswahl\.onchange = pfandVerbuchenVorbelegen/,
+    "Ein Kassenwechsel sollte die Vorbelegung neu berechnen"
+  );
+  const indexHtml = readFileSync("index.html", "utf-8");
+  assert.match(indexHtml, /id="au-pfand-marken-hinweis"/);
 });

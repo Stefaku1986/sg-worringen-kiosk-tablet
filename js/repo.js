@@ -1896,7 +1896,11 @@ export async function auswertungJeKasse() {
 export async function offenePfandmarkenJeKasse() {
   const positionen = await positionenMitKasse();
   const jeWert = {};
-  for (const v of VERANSTALTUNGEN) jeWert[v] = new Map();
+  const bruttoPfand = {};
+  for (const v of VERANSTALTUNGEN) {
+    jeWert[v] = new Map();
+    bruttoPfand[v] = 0;
+  }
   for (const p of positionen) {
     if (!p.pfand_betrag) continue;
     const werte = jeWert[p.veranstaltung];
@@ -1904,23 +1908,56 @@ export async function offenePfandmarkenJeKasse() {
     const wert = rund2(Math.abs(p.pfand_betrag));
     const richtung = p.pfand_betrag > 0 ? 1 : -1;
     werte.set(wert, (werte.get(wert) || 0) + richtung * p.menge);
+    bruttoPfand[p.veranstaltung] += p.menge * p.pfand_betrag;
   }
 
-  const auswertung = await auswertungJeKasse();
+  const verbucht = await pfandGewinnVerbuchtJeKasse();
   const ergebnis = {};
   for (const kasse of VERANSTALTUNGEN) {
+    const offenBrutto = rund2(bruttoPfand[kasse]);
+    const schonVerbucht = rund2(verbucht[kasse] || 0);
+    const restWerte = markenNachVerbuchung(jeWert[kasse], offenBrutto, schonVerbucht);
     // Markenwerte ohne offene Marken gar nicht auffuehren - sonst stuende in
     // der Oberflaeche dauerhaft "0 x 1,00 €" herum.
-    const sortiert = [...jeWert[kasse].entries()]
+    const sortiert = [...restWerte.entries()]
       .filter(([, anzahl]) => anzahl !== 0)
       .sort((a, b) => a[0] - b[0]);
     ergebnis[kasse] = {
       menge: sortiert.reduce((s, [, anzahl]) => s + anzahl, 0),
-      betrag: rund2(auswertung[kasse]?.pfand ?? 0),
+      betrag: rund2(offenBrutto - schonVerbucht),
       jeWert: sortiert,
     };
   }
   return ergebnis;
+}
+
+// Runde 58: Zieht als Gewinn verbuchtes Pfand von der Markenzaehlung ab -
+// Pendant zu repository._marken_nach_verbuchung, gleiche Regel:
+//   1. Ist das GESAMTE offene Pfand verbucht, ist nichts mehr offen und der
+//      Zaehler geht auf null (Normalfall Saisonabschluss, eindeutig; raeumt
+//      bewusst auch negative Markenstaende ab).
+//   2. Bei einem Teilbetrag ist nicht ableitbar, welche Marken gemeint waren
+//      (2,00 € koennen eine 2-€-Marke oder zwei 1-€-Marken sein). Regel: vom
+//      hoechsten Markenwert abwaerts abschreiben - das schreibt so wenige
+//      Marken wie moeglich ab, laesst den Zaehler also eher zu hoch stehen.
+//      Negative Staende werden uebersprungen: was nicht ausgegeben wurde,
+//      kann auch nicht abgeschrieben werden.
+// Stornierte Verbuchungen sind in "verbucht" bereits gegengerechnet, ein
+// Storno stellt die Marken also von selbst wieder her.
+function markenNachVerbuchung(werte, offenBrutto, verbucht) {
+  if (verbucht <= 0) return new Map(werte);
+  if (verbucht >= offenBrutto) return new Map();
+
+  const rest = new Map(werte);
+  let offenBetrag = verbucht;
+  for (const wert of [...rest.keys()].sort((a, b) => b - a)) {
+    const vorhanden = rest.get(wert);
+    if (offenBetrag < wert || vorhanden <= 0) continue;
+    const abschreibbar = Math.min(vorhanden, Math.floor(offenBetrag / wert));
+    rest.set(wert, vorhanden - abschreibbar);
+    offenBetrag = rund2(offenBetrag - abschreibbar * wert);
+  }
+  return rest;
 }
 
 // ---------------------------------------------------------------------

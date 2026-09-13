@@ -262,6 +262,7 @@ const auPfandKasseAuswahl = el("au-pfand-kasse-auswahl");
 const auPfandBetragFeld = el("au-pfand-betrag-feld");
 const auPfandKommentarFeld = el("au-pfand-kommentar-feld");
 const auPfandFehler = el("au-pfand-fehler");
+const auPfandMarkenHinweis = el("au-pfand-marken-hinweis");
 const auPfandVerbuchenBtn = el("au-pfand-verbuchen-btn");
 const auPfandTabelleBody = document.querySelector("#au-pfand-tabelle tbody");
 const auMonatJahrFeld = el("au-monat-jahr-feld");
@@ -2846,6 +2847,7 @@ async function renderAuswertung() {
   }
 
   await renderPfandGewinnVerbuchungen();
+  await pfandVerbuchenVorbelegen();
 }
 
 async function renderPfandGewinnVerbuchungen() {
@@ -2891,12 +2893,36 @@ async function renderPfandGewinnVerbuchungen() {
           zeigeHinweis("Fehler beim Stornieren", exc.message ?? String(exc));
           return;
         }
-        renderAuswertung();
+        await renderAuswertung();
+        // Storno stellt die Marken wieder her - Zaehler nachziehen.
+        await aktualisierePfandmarkenAnzeige();
       };
       tdAktion.appendChild(btn);
     }
     tr.appendChild(tdAktion);
     auPfandTabelleBody.appendChild(tr);
+  }
+}
+
+// Runde 58 (Nutzerwunsch 13.09.2026): Betragsfeld mit dem offenen Pfand der
+// gewaehlten Kasse vorbelegen. Am Rechner ist das seit Runde 50 so, auf dem
+// Tablet blieb das Feld leer - man musste den Betrag aus der Kennzahlenkarte
+// abschreiben. Der Normalfall ist "alles verbuchen", also ist der volle offene
+// Betrag der richtige Vorschlag; ueberschreiben bleibt moeglich.
+// Zusaetzlich wird darunter angezeigt, welche Marken damit abgeraeumt werden.
+async function pfandVerbuchenVorbelegen() {
+  const marken = await repo.offenePfandmarkenJeKasse();
+  const daten = marken[auPfandKasseAuswahl.value] || { betrag: 0, jeWert: [] };
+  auPfandBetragFeld.value = daten.betrag > 0 ? deZahl(daten.betrag) : "";
+  auPfandFehler.textContent = "";
+  if (daten.betrag > 0 && daten.jeWert.length) {
+    const aufteilung = daten.jeWert.map(([wert, anzahl]) => `${anzahl} × ${euro(wert)}`).join(" · ");
+    auPfandMarkenHinweis.textContent =
+      `Offen: ${aufteilung}. Wird der volle Betrag verbucht, geht der Markenzähler auf null.`;
+  } else if (daten.betrag > 0) {
+    auPfandMarkenHinweis.textContent = "";
+  } else {
+    auPfandMarkenHinweis.textContent = "Für diese Kasse ist aktuell kein Pfand offen.";
   }
 }
 
@@ -2916,9 +2942,12 @@ async function pfandVerbuchen() {
     auPfandFehler.textContent = exc.message ?? String(exc);
     return;
   }
-  auPfandBetragFeld.value = "";
   auPfandKommentarFeld.value = "";
-  renderAuswertung();
+  await renderAuswertung();
+  await pfandVerbuchenVorbelegen();
+  // Der Markenzaehler im Reiter "Verkauf" haengt an der Verbuchung und muss
+  // sofort nachziehen.
+  await aktualisierePfandmarkenAnzeige();
 }
 
 async function monatsabrechnungAnzeigen() {
@@ -3611,6 +3640,7 @@ function wireEvents() {
 
   // Runde 43: Auswertung / Monatsabrechnung
   auPfandVerbuchenBtn.onclick = einmalig(auPfandVerbuchenBtn, pfandVerbuchen);
+  auPfandKasseAuswahl.onchange = pfandVerbuchenVorbelegen;
   auMonatAnzeigenBtn.onclick = monatsabrechnungAnzeigen;
   auMonatDruckenBtn.onclick = monatsabrechnungDrucken;
 
