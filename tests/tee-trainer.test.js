@@ -55,10 +55,22 @@ test("TEE_TRAINER_PRODUKT_ID unterscheidet sich von KAFFEE_TRAINER_PRODUKT_ID", 
 // ===== index.html Tests =====
 
 test("index.html enthält den tee-trainer-btn mit passender Beschriftung", () => {
+  // Runde 59: Der Zusatz "(kostenlos)" ist aus der Beschriftung raus, seit die
+  // Aktionsknoepfe paarweise nebeneinander stehen - zwei schmale Spalten, und
+  // der Hinweis waere doppelt: die Bestaetigungsabfrage sagt es ohnehin zweimal
+  // (siehe unten). Beschriftung und Abfrage werden deshalb getrennt geprueft.
   assert.match(
     indexHtml,
-    /id="tee-trainer-btn".*class="btn".*Tee.*Trainer.*kostenlos/,
-    "tee-trainer-btn sollte mit 'Tee', 'Trainer' und 'kostenlos' gekennzeichnet sein"
+    /id="tee-trainer-btn".*class="btn".*Tee.*Trainer/,
+    "tee-trainer-btn sollte mit 'Tee' und 'Trainer' gekennzeichnet sein"
+  );
+});
+
+test("die Tee-Ausgabe wird als kostenlos bestätigt", () => {
+  assert.match(
+    mainJs,
+    /kostenlos an einen Trainer ausgeben\?/,
+    "Die Bestätigungsabfrage muss klarstellen, dass die Ausgabe kostenlos ist"
   );
 });
 

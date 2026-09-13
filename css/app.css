@@ -438,6 +438,25 @@ button.btn-primaer:active {
   text-align: right;
   padding: 10px 4px;
 }
+/* Runde 59: Aktionsknoepfe unter dem Warenkorb als 2er-Raster. Der
+   Helferpreis gilt fuer den naechsten Artikel und gehoert damit ueber die
+   volle Breite, damit er nicht wie eine der paarweisen Aktionen daneben
+   aussieht - die vier uebrigen stehen paarweise (Pfand 2,00/1,00 €,
+   Kaffee/Tee). Die margin-bottom der einzelnen Knoepfe entfaellt hier, das
+   Raster setzt die Abstaende ueber "gap". */
+#aktions-raster {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 10px;
+}
+#aktions-raster .helferpreis-btn {
+  grid-column: 1 / -1;
+}
+#aktions-raster .btn {
+  margin-bottom: 0;
+}
+
 .helferpreis-btn {
   width: 100%;
   margin-bottom: 10px;

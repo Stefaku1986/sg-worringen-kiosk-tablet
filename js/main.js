@@ -3010,8 +3010,8 @@ function monatsabrechnungHtml(m) {
 
     <h2>Wareneinkauf des Monats (Summe)</h2>
     ${m.wareneinkauf_teilweise_geschaetzt ? '<p class="hinweis">Für einzelne Wareneingänge wurde kein Preis erfasst – dort wurde der am Produkt hinterlegte Einkaufspreis geschätzt.</p>' : ""}
-    <table><thead><tr><th>Menge</th><th>Netto</th><th>MwSt. (Vorsteuer)</th><th>Brutto</th></tr></thead><tbody>
-      <tr><td>${m.gesamt_menge_eingekauft} Stück</td><td style="text-align:right">${euro(m.gesamt_wareneinkauf_netto)}</td><td style="text-align:right">${euro(m.gesamt_vorsteuer)}</td><td style="text-align:right">${euro(m.gesamt_wareneinkauf_brutto)}</td></tr>
+    <table><thead><tr><th>Netto</th><th>MwSt. (Vorsteuer)</th><th>Brutto</th></tr></thead><tbody>
+      <tr><td style="text-align:right">${euro(m.gesamt_wareneinkauf_netto)}</td><td style="text-align:right">${euro(m.gesamt_vorsteuer)}</td><td style="text-align:right">${euro(m.gesamt_wareneinkauf_brutto)}</td></tr>
     </tbody></table>
 
     <h2>Schiedsrichter-Auszahlungen</h2>
@@ -3019,7 +3019,6 @@ function monatsabrechnungHtml(m) {
 
     <h2>Zusammenfassung</h2>
     <div class="kennzahl-zeile"><span>Gesamterlös (brutto)</span><span>${euro(m.gesamt_erloes)}</span></div>
-    <div class="kennzahl-zeile"><span>Verkaufte Menge insgesamt</span><span>${m.gesamt_menge_verkauft} Stück</span></div>
     <div class="kennzahl-zeile"><span>Gesamtgewinn (nach Wareneinsatz)</span><span>${euro(m.gesamt_gewinn)}</span></div>
     <div class="kennzahl-zeile"><span>Pfand insgesamt (kein Erlös)</span><span>${euro(m.gesamt_pfand)}</span></div>
     ${kategorieKennzahlen}
