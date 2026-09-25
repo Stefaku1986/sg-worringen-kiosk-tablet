@@ -14,7 +14,7 @@ export const SUPABASE_ANON_KEY = "sb_publishable_UGRAXILrHUkfckecBNXLrQ_6Mgrq_sQ
 // analog zur Fenstertitel-Versionsanzeige der Windows-App (kiosk/__version__.py).
 // Bei sichtbaren Aenderungen an der Tablet-App bitte erhoehen (z.B. 1.1.0
 // fuer neue Funktionen, 1.0.1 fuer reine Bugfixes).
-export const APP_VERSION = "1.32.0";
+export const APP_VERSION = "1.33.0";
 
 // Kategorien und Vorschlagswert fuer den MwSt.-Satz beim Anlegen eines
 // Produkts (Runde 43, Produktverwaltung auf dem Tablet) - identisch zu
@@ -110,3 +110,10 @@ export const FEEDBACK_STATUS_LABEL = {
 export const KASSENSTURZ_STICHTAG = "2026-08-31T00:00:00+00:00";
 export const KASSENSTURZ_GRUNDBESTAND = 169.00;
 export const KASSENSTURZ_VERANSTALTUNG_GESAMT = "Gesamt";
+
+// Runde 58: Ab hier mindern Nachbestellungen automatisch das Kassensturz-Soll
+// (siehe repo.nachbestellungenBarSummeGesamt). Liegt nach dem letzten
+// Kassensturz vor der Umstellung (22.09.2026) - aeltere Einkaeufe wurden von
+// Hand als Bargeld-Entnahme gegengebucht. Identisch zu
+// NACHBESTELLUNG_KASSE_STICHTAG in kiosk/repository.py.
+export const NACHBESTELLUNG_KASSE_STICHTAG = "2026-09-23T00:00:00+00:00";

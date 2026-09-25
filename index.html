@@ -156,6 +156,7 @@
           <div class="kennzahl-zeile"><span>Sonstige Ausgaben</span><span id="ks-sonstige-ausgaben"></span></div>
           <div class="kennzahl-zeile"><span>Bargeld-Einzahlungen</span><span id="ks-einzahlungen"></span></div>
           <div class="kennzahl-zeile"><span>Bargeld-Entnahmen</span><span id="ks-entnahmen"></span></div>
+          <div class="kennzahl-zeile"><span>Nachbestellungen (bar bezahlt)</span><span id="ks-nachbestellungen"></span></div>
           <div class="kennzahl-zeile gesamt"><span>Soll (gesamt)</span><span id="ks-soll"></span></div>
 
           <div id="ks-soll-negativ-warnung" class="warnung" style="display:none; margin-top:12px; color:var(--rot);">
@@ -309,7 +310,8 @@
       <!-- Nachbestellungen (Produkte + Lieferanten-Pfand) - nur fuer Administratoren -->
       <section id="nachbestellung-view" style="display:none;">
         <div class="karte" style="max-width:560px;">
-          <h2 style="margin-top:0; color:var(--blau-dunkel);">Nachbestellung erfassen</h2>
+          <h2 style="margin-top:0; color:var(--blau-dunkel);" id="np-titel">Nachbestellung erfassen</h2>
+          <div id="np-korrektur-hinweis" class="warnung" style="display:none; margin-bottom:10px;"></div>
           <p class="hinweis">
             Nachbestellte Produkte (Getränke und Speisen) mit Menge eintragen – bucht
             automatisch einen Wareneingang, der Bestand aktualisiert sich direkt. Preis und
@@ -319,6 +321,9 @@
             wird. Die beiden Felder "Sonstiges Pfand" unten
             sind für Pfand ohne Bezug zu einer bestimmten Position (z.B. lose Kisten-Rückgabe
             beim Händler) – getrennt vom Kunden-Pfand am Kiosk.
+            Bezahlt wird bar aus der Kiosk-Kasse: Warenwert plus Pfand-Saldo wird beim
+            nächsten Kassensturz automatisch vom Soll abgezogen – dafür also
+            <b>keine</b> zusätzliche Bargeld-Entnahme buchen.
           </p>
 
           <label><b>Produkt hinzufügen:</b></label>
@@ -353,13 +358,14 @@
           <input type="text" class="betrag" id="np-kommentar-feld" placeholder="z.B. Lieferant/Anlass" />
           <div id="np-fehler" class="pin-fehler"></div>
           <button id="np-erfassen-btn" class="btn btn-primaer" style="width:100%;">Nachbestellung erfassen</button>
+          <button id="np-korrektur-abbrechen-btn" type="button" class="btn" style="width:100%; margin-top:6px; display:none;">Korrektur abbrechen</button>
         </div>
 
         <div class="karte">
           <h2 style="margin-top:0; color:var(--blau-dunkel);">Letzte Nachbestellungen</h2>
           <table class="liste" id="np-tabelle">
             <thead>
-              <tr><th>Datum</th><th>Produkte</th><th>Bezahlt</th><th>Erhalten</th><th>Status</th><th></th></tr>
+              <tr><th>Datum</th><th>Produkte</th><th>Pfand bezahlt</th><th>Pfand erhalten</th><th>Aus Kasse</th><th>Status</th><th></th></tr>
             </thead>
             <tbody></tbody>
           </table>

@@ -131,6 +131,7 @@ const ksAuszahlungen = el("ks-auszahlungen");
 const ksSonstigeAusgaben = el("ks-sonstige-ausgaben");
 const ksEinzahlungen = el("ks-einzahlungen");
 const ksEntnahmen = el("ks-entnahmen");
+const ksNachbestellungen = el("ks-nachbestellungen");
 const ksSoll = el("ks-soll");
 const ksSollAufteilung = el("ks-soll-aufteilung");
 const ksGezaehltFeld = el("ks-gezaehlt-feld");
@@ -192,6 +193,9 @@ const npErhaltenFeld = el("np-erhalten-feld");
 const npKommentarFeld = el("np-kommentar-feld");
 const npFehler = el("np-fehler");
 const npErfassenBtn = el("np-erfassen-btn");
+const npTitel = el("np-titel");
+const npKorrekturHinweis = el("np-korrektur-hinweis");
+const npKorrekturAbbrechenBtn = el("np-korrektur-abbrechen-btn");
 const npTabelleBody = document.querySelector("#np-tabelle tbody");
 
 const tsTeamAuswahl = el("ts-team-auswahl");
@@ -359,6 +363,7 @@ const KASSENSTURZ_PFLICHT_TABELLEN = [
 let produkteCache = [];
 let benutzerCache = [];
 let warenkorb = []; // {produktId, name, menge, einzelpreis, einkaufspreis, mwstSatz, istHelferpreis, pfandBetrag, istPfandrueckgabe}
+let nachbestellungKorrekturId = null; // Runde 58: ID der Nachbestellung, die gerade korrigiert wird
 let nachbestellungPositionen = []; // {produktId, name, menge, einzelpreis (netto, oder null), mwstSatz (oder null), preisBrutto (nur fuer die Anzeige), pfandBezahlt (pro Stueck, oder null), pfandErhalten (pro Stueck, oder null)}
 let helferpreisAktiv = false;
 let angemeldeterKandidat = null; // Benutzer, dessen PIN gerade eingegeben wird
@@ -837,7 +842,7 @@ function nachAnmeldungAnzeigen() {
   tabAdmin.style.display = benutzer.ist_admin ? "" : "none";
   kasseAuswahl.value = session.getAktiveKasse();
   warenkorb = [];
-  nachbestellungPositionen = [];
+  nachbestellungFormularLeeren();
   helferpreisAktiv = false;
   abgelehnteKassenvorschlaege = new Set();
   zeigeHauptView("verkauf");
@@ -857,7 +862,7 @@ async function abmelden() {
 
   session.abmelden();
   warenkorb = [];
-  nachbestellungPositionen = [];
+  nachbestellungFormularLeeren();
   helferpreisAktiv = false;
   letzteMehrAnsicht = null;
   renderLoginNutzer();
@@ -1406,6 +1411,7 @@ async function renderKassensturz() {
     ksSonstigeAusgaben.textContent = "–";
     ksEinzahlungen.textContent = "–";
     ksEntnahmen.textContent = "–";
+    ksNachbestellungen.textContent = "–";
     ksSoll.textContent = "–";
     sollNegativWarnung.style.display = "none";
     ksGezaehltFeld.value = "";
@@ -1430,6 +1436,7 @@ async function renderKassensturz() {
   ksSonstigeAusgaben.textContent = euro(vorschau.sonstigeAusgaben);
   ksEinzahlungen.textContent = euro(vorschau.einzahlungen);
   ksEntnahmen.textContent = euro(vorschau.entnahmen);
+  ksNachbestellungen.textContent = euro(vorschau.nachbestellungen ?? 0);
   ksSoll.textContent = euro(vorschau.soll);
 
   sollNegativWarnung.style.display = vorschau.sollNegativ ? "" : "none";
@@ -2048,6 +2055,28 @@ function renderNachbestellungPositionenListe() {
     summeZeile.innerHTML = `<b>Warenwert gesamt: ${euro(summe)}</b> (inkl. MwSt., ohne Pfand)`;
     npPositionenListe.appendChild(summeZeile);
   }
+  aktualisiereNachbestellungKassenbetrag();
+}
+
+// Runde 58: was beim Kassensturz vom Soll abgezogen wird - Warenwert brutto
+// (je Position auf den Cent gerundet, wie repo.nachbestellungBarbetrag)
+// plus Pfand bezahlt minus Pfand zurueckerhalten.
+function aktualisiereNachbestellungKassenbetrag() {
+  const alt = document.getElementById("np-kassenbetrag");
+  if (alt) alt.remove();
+  let betrag = (betragLesen(npBezahltFeld) || 0) - (betragLesen(npErhaltenFeld) || 0);
+  for (const p of nachbestellungPositionen) {
+    if (p.einzelpreis != null) {
+      betrag += rund2(p.menge * p.einzelpreis * (1 + (p.mwstSatz || 0) / 100));
+    }
+    betrag += ((p.pfandBezahlt || 0) - (p.pfandErhalten || 0)) * p.menge;
+  }
+  if (!nachbestellungPositionen.length && !betrag) return;
+  const zeile = document.createElement("p");
+  zeile.id = "np-kassenbetrag";
+  zeile.className = "hinweis";
+  zeile.innerHTML = `<b>Aus der Kiosk-Kasse bezahlt: ${euro(rund2(betrag))}</b>`;
+  npPositionenListe.appendChild(zeile);
 }
 
 function nachbestellungPositionHinzufuegen() {
@@ -2132,6 +2161,7 @@ async function renderNachbestellungen() {
       produkteText,
       euro(eintrag.bezahlt),
       euro(eintrag.erhalten),
+      euro(await repo.nachbestellungBarbetrag(eintrag.id)),
       status,
     ];
     for (const wert of zellen) {
@@ -2142,6 +2172,13 @@ async function renderNachbestellungen() {
 
     const tdAktion = document.createElement("td");
     if (status === "Aktiv") {
+      const korrBtn = document.createElement("button");
+      korrBtn.type = "button";
+      korrBtn.className = "btn";
+      korrBtn.textContent = "Korrigieren";
+      korrBtn.style.marginRight = "6px";
+      korrBtn.onclick = () => nachbestellungKorrekturStarten(eintrag);
+      tdAktion.appendChild(korrBtn);
       const btn = document.createElement("button");
       btn.type = "button";
       btn.className = "btn";
@@ -2184,31 +2221,78 @@ async function nachbestellungErfassen() {
     erhalten += (p.pfandErhalten || 0) * p.menge;
   }
   const benutzer = session.getAktuellerBenutzer();
+  const positionen = nachbestellungPositionen.map((p) => ({
+    produktId: p.produktId,
+    menge: p.menge,
+    einzelpreis: p.einzelpreis,
+    mwstSatz: p.mwstSatz,
+    pfandBezahlt: p.pfandBezahlt,
+    pfandErhalten: p.pfandErhalten,
+  }));
   try {
-    await repo.lieferantenPfandErfassen(
-      bezahlt,
-      erhalten,
-      npKommentarFeld.value.trim(),
-      benutzer.name,
-      nachbestellungPositionen.map((p) => ({
-        produktId: p.produktId,
-        menge: p.menge,
-        einzelpreis: p.einzelpreis,
-        mwstSatz: p.mwstSatz,
-        pfandBezahlt: p.pfandBezahlt,
-        pfandErhalten: p.pfandErhalten,
-      }))
-    );
+    if (nachbestellungKorrekturId) {
+      await repo.nachbestellungKorrigieren(
+        nachbestellungKorrekturId,
+        bezahlt,
+        erhalten,
+        npKommentarFeld.value.trim(),
+        benutzer.name,
+        positionen
+      );
+    } else {
+      await repo.lieferantenPfandErfassen(
+        bezahlt,
+        erhalten,
+        npKommentarFeld.value.trim(),
+        benutzer.name,
+        positionen
+      );
+    }
   } catch (exc) {
     npFehler.textContent = exc.message ?? String(exc);
     return;
   }
+  nachbestellungFormularLeeren();
+  renderNachbestellungen();
+}
+
+function nachbestellungFormularLeeren() {
   npBezahltFeld.value = "";
   npErhaltenFeld.value = "";
   npKommentarFeld.value = "";
   npFehler.textContent = "";
   nachbestellungPositionen = [];
-  renderNachbestellungen();
+  nachbestellungKorrekturId = null;
+  npTitel.textContent = "Nachbestellung erfassen";
+  npErfassenBtn.textContent = "Nachbestellung erfassen";
+  npKorrekturHinweis.style.display = "none";
+  npKorrekturAbbrechenBtn.style.display = "none";
+}
+
+// Runde 58: Nachbestellung "bearbeiten" - laedt sie ins Formular oben. Beim
+// Speichern wird die alte Buchung storniert und die korrigierte neu erfasst
+// (repo.nachbestellungKorrigieren).
+async function nachbestellungKorrekturStarten(eintrag) {
+  const vorlage = await repo.nachbestellungKorrekturVorlage(eintrag.id);
+  nachbestellungKorrekturId = eintrag.id;
+  nachbestellungPositionen = vorlage.positionen.map((p) => {
+    const produkt = produkteCache.find((pr) => pr.id === p.produktId);
+    return { ...p, name: produkt ? produkt.name : "?" };
+  });
+  npBezahltFeld.value = vorlage.sonstigesBezahlt ? deZahl(vorlage.sonstigesBezahlt) : "";
+  npErhaltenFeld.value = vorlage.sonstigesErhalten ? deZahl(vorlage.sonstigesErhalten) : "";
+  npKommentarFeld.value = vorlage.kommentar;
+  npFehler.textContent = "";
+  npTitel.textContent = "Nachbestellung korrigieren";
+  npErfassenBtn.textContent = "Korrektur speichern";
+  npKorrekturHinweis.textContent =
+    `Korrektur der Nachbestellung vom ${formatDatumUhrzeit(eintrag.datum)}: ` +
+    "beim Speichern wird die bisherige Buchung storniert und diese hier neu erfasst. " +
+    "Positionen mit ✕ entfernen und neu hinzufügen, um sie zu ändern.";
+  npKorrekturHinweis.style.display = "";
+  npKorrekturAbbrechenBtn.style.display = "";
+  renderNachbestellungPositionenListe();
+  npTitel.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 // ---------------------------------------------------------------------
@@ -3588,6 +3672,12 @@ function wireEvents() {
   ksEntnahmeSpeichernBtn.onclick = einmalig(ksEntnahmeSpeichernBtn, ksEntnahmeSpeichern);
   npPositionHinzufuegenBtn.onclick = nachbestellungPositionHinzufuegen;
   npErfassenBtn.onclick = einmalig(npErfassenBtn, nachbestellungErfassen);
+  npKorrekturAbbrechenBtn.onclick = () => {
+    nachbestellungFormularLeeren();
+    renderNachbestellungPositionenListe();
+  };
+  npBezahltFeld.addEventListener("input", aktualisiereNachbestellungKassenbetrag);
+  npErhaltenFeld.addEventListener("input", aktualisiereNachbestellungKassenbetrag);
   tsEintragenBtn.onclick = einmalig(tsEintragenBtn, heimspielEintragen);
   fbEinreichenBtn.onclick = einmalig(fbEinreichenBtn, feedbackEinreichen);
   fbsAbbrechenBtn.onclick = feedbackStatusSchliessen;

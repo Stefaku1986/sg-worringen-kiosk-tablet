@@ -24,6 +24,7 @@ import {
   VERANSTALTUNGEN,
   MWST_SAETZE,
   KASSENSTURZ_STICHTAG,
+  NACHBESTELLUNG_KASSE_STICHTAG,
   KASSENSTURZ_GRUNDBESTAND,
   KASSENSTURZ_VERANSTALTUNG_GESAMT,
 } from "./config.js";
@@ -949,6 +950,104 @@ export async function lieferantenPfandStornieren(eintragId, benutzerName, kommen
   return stornoId;
 }
 
+// Runde 58: Bar aus der Kiosk-Kasse bezahlter Betrag einer Nachbestellung -
+// Pendant zu repository._nachbestellung_barbetrag_sql: Warenwert brutto (je
+// Position Menge x Netto-Stueckpreis x (1 + MwSt.), auf den Cent gerundet)
+// + Pfand bezahlt - Pfand zurueckerhalten. Stornos gehen automatisch negativ
+// ein (negierte Menge bzw. Pfandbetraege der Gegenbuchung).
+function barbetragAusPositionen(eintrag, positionen) {
+  let summe = (eintrag.bezahlt || 0) - (eintrag.erhalten || 0);
+  for (const p of positionen) {
+    summe += rund2(p.menge * (p.einzelpreis || 0) * (1 + (p.mwst_satz || 0) / 100));
+  }
+  return rund2(summe);
+}
+
+export async function nachbestellungBarbetrag(eintragId) {
+  const eintrag = await get("lieferanten_pfand", eintragId);
+  if (!eintrag) return 0;
+  return barbetragAusPositionen(eintrag, await nachbestellungPositionen(eintragId));
+}
+
+// Summe der seit `seit` bar bezahlten Nachbestellungen fuer das
+// Kassensturz-Soll. Es zaehlen nur Nachbestellungen ab
+// NACHBESTELLUNG_KASSE_STICHTAG, und ein Storno nur, wenn die stornierte
+// Nachbestellung selbst ab dem Stichtag erfasst wurde (aeltere Einkaeufe
+// wurden nie automatisch abgezogen, ihr Storno darf das Soll nicht erhoehen).
+async function nachbestellungenBarSummeGesamt(seit) {
+  const alle = await getAll("lieferanten_pfand");
+  const jeId = new Map(alle.map((e) => [e.id, e]));
+  const allePositionen = await getAll("nachbestellung_positionen");
+  let summe = 0;
+  for (const e of alle) {
+    if (!(e.datum > seit)) continue;
+    const bezug = e.storno_von ? jeId.get(e.storno_von) : e;
+    const bezugsDatum = bezug ? bezug.datum : e.datum;
+    if (bezugsDatum < NACHBESTELLUNG_KASSE_STICHTAG) continue;
+    const positionen = allePositionen.filter((p) => p.nachbestellung_id === e.id);
+    summe += barbetragAusPositionen(e, positionen);
+  }
+  return rund2(summe);
+}
+
+// Runde 58: Werte einer Nachbestellung zum Vorbelegen des Formulars
+// ("Korrigieren"). Positionen behalten ihren exakten Netto-Stueckpreis,
+// sodass eine unveraenderte Korrektur centgenau denselben Betrag ergibt.
+export async function nachbestellungKorrekturVorlage(eintragId) {
+  const eintrag = await get("lieferanten_pfand", eintragId);
+  if (!eintrag) throw new Error("Eintrag nicht gefunden.");
+  const positionen = await nachbestellungPositionen(eintragId);
+  let posBezahlt = 0;
+  let posErhalten = 0;
+  const ergebnis = positionen.map((p) => {
+    posBezahlt += (p.pfand_bezahlt || 0) * p.menge;
+    posErhalten += (p.pfand_erhalten || 0) * p.menge;
+    return {
+      produktId: p.produkt_id,
+      menge: p.menge,
+      einzelpreis: p.einzelpreis ?? null,
+      mwstSatz: p.einzelpreis ? p.mwst_satz : null,
+      preisBrutto: p.einzelpreis ? p.einzelpreis * (1 + (p.mwst_satz || 0) / 100) : 0,
+      pfandBezahlt: p.pfand_bezahlt || null,
+      pfandErhalten: p.pfand_erhalten || null,
+    };
+  });
+  return {
+    id: eintrag.id,
+    kommentar: eintrag.kommentar || "",
+    sonstigesBezahlt: Math.max(rund2((eintrag.bezahlt || 0) - posBezahlt), 0),
+    sonstigesErhalten: Math.max(rund2((eintrag.erhalten || 0) - posErhalten), 0),
+    positionen: ergebnis,
+  };
+}
+
+// Runde 58: "Bearbeiten" = Storno der alten Nachbestellung + Neuerfassung.
+// IndexedDB-Schreibvorgaenge laufen hier nicht in einer gemeinsamen
+// Transaktion - deshalb wird die Eingabe VOR dem Storno geprueft, damit eine
+// leere Korrektur die alte Buchung nicht storniert.
+export async function nachbestellungKorrigieren(
+  eintragId,
+  bezahlt,
+  erhalten,
+  kommentar,
+  benutzerName,
+  positionen = []
+) {
+  const gefiltert = (positionen || []).filter((p) => p.menge);
+  if (rund2(bezahlt || 0) === 0 && rund2(erhalten || 0) === 0 && gefiltert.length === 0) {
+    throw new Error(
+      "Bitte mindestens einen Betrag (bezahlt/zurückerhalten) oder eine " +
+        "Produktposition angeben."
+    );
+  }
+  await lieferantenPfandStornieren(
+    eintragId,
+    benutzerName,
+    `Korrektur: Storno zu Nachbestellung ${eintragId}`
+  );
+  return lieferantenPfandErfassen(bezahlt, erhalten, kommentar, benutzerName, gefiltert);
+}
+
 // ---------------------------------------------------------------------
 // Kassensturz (mit explizitem Anfangsbestand / Wechselgeld) - Pendant zu
 // repository.letzter_kassensturz / kassensturz_vorschau /
@@ -1091,6 +1190,8 @@ export async function kassensturzGesamtVorschau() {
   const gesamtSonstigeAusgaben = await sonstigeAusgabenSummeGesamt(seit);
   const gesamtEinzahlungen = await bargeldEinzahlungenSummeGesamt(seit);
   const gesamtEntnahmen = await bargeldEntnahmenAdhocSummeGesamt(seit);
+  // Runde 58: Nachbestellungen werden bar aus der Kiosk-Kasse bezahlt.
+  const gesamtNachbestellungen = await nachbestellungenBarSummeGesamt(seit);
 
   const soll = rund2(
     anfangsbestand +
@@ -1098,7 +1199,8 @@ export async function kassensturzGesamtVorschau() {
       gesamtAuszahlungen -
       gesamtSonstigeAusgaben +
       gesamtEinzahlungen -
-      gesamtEntnahmen
+      gesamtEntnahmen -
+      gesamtNachbestellungen
   );
 
   return {
@@ -1109,6 +1211,7 @@ export async function kassensturzGesamtVorschau() {
     sonstigeAusgaben: gesamtSonstigeAusgaben,
     einzahlungen: gesamtEinzahlungen,
     entnahmen: gesamtEntnahmen,
+    nachbestellungen: gesamtNachbestellungen,
     soll,
     sollNegativ: soll < 0,
     kassen,
