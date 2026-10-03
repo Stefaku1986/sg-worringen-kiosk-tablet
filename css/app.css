@@ -657,6 +657,18 @@ button.btn-deckel:active {
   background: #b36b00;
   color: white;
 }
+/* Runde 60: gesperrte Zahlungsknoepfe (nichts offen) deutlich grau. */
+button.btn-deckel:disabled {
+  background: #b5b5b5;
+  color: #f2f2f2;
+  opacity: 0.7;
+}
+.deckel-zahl-knoepfe {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
 #bezahl-zeile {
   display: flex;
   gap: 10px;

@@ -108,7 +108,8 @@ const deckelGrid = el("deckel-grid");
 const deckelLeerHinweis = el("deckel-leer-hinweis");
 const deckelNeuBtn = el("deckel-neu-btn");
 const deckelZurueckBtn = el("deckel-zurueck-btn");
-const deckelBezahlenBtn = el("deckel-bezahlen-btn");
+const deckelKomplettBtn = el("deckel-komplett-btn");
+const deckelTeilbetragBtn = el("deckel-teilbetrag-btn");
 const deckelDetailName = el("deckel-detail-name");
 const deckelDetailOffen = el("deckel-detail-offen");
 const deckelVerlaufBody = el("deckel-verlauf-tabelle").querySelector("tbody");
@@ -1297,6 +1298,11 @@ async function aktualisierePfandmarkenAnzeige() {
 let aktuellerDeckelId = null; // Detailansicht im Reiter "Bierdeckel", sonst null
 let deckelBuchenGewaehlt = null; // { name } waehrend "Auf Bierdeckel buchen"
 
+// Runde 60: Summe fuer "Auf Deckel" ist pfandfrei (Menge x Einzelpreis).
+function deckelSumme() {
+  return rund2(warenkorb.reduce((s, z) => s + z.menge * z.einzelpreis, 0));
+}
+
 function deckelOffenText(offen) {
   if (offen > 0) return `offen: ${euro(offen)}`;
   if (offen < 0) return `Guthaben: ${euro(-offen)}`;
@@ -1358,7 +1364,14 @@ async function renderDeckelDetail() {
       : eintrag.offen < 0
         ? `Guthaben: ${euro(-eintrag.offen)}`
         : "Bezahlt - nichts offen";
-  deckelBezahlenBtn.disabled = eintrag.offen <= 0;
+  // Runde 60: nur Barzahlung (komplett oder Teilbetrag); ohne offenen Betrag
+  // sind beide Knoepfe gesperrt.
+  const nichtsOffen = eintrag.offen <= 0.005;
+  deckelKomplettBtn.disabled = nichtsOffen;
+  deckelTeilbetragBtn.disabled = nichtsOffen;
+  deckelKomplettBtn.textContent = nichtsOffen
+    ? "Komplett bar bezahlen"
+    : `Komplett bar bezahlen (${euro(eintrag.offen)})`;
 
   const verlauf = await repo.deckelVerlauf(id);
   deckelVerlaufBody.innerHTML = "";
@@ -1424,14 +1437,33 @@ async function deckelNeuAnlegen() {
 async function deckelZahlungOeffnen() {
   if (!aktuellerDeckelId) return;
   const eintrag = (await repo.deckelUebersicht()).find((d) => d.id === aktuellerDeckelId);
-  if (!eintrag || eintrag.offen <= 0) return;
-  deckelZahlungTitel.textContent = `Bierdeckel bezahlen: ${eintrag.name}`;
+  if (!eintrag || eintrag.offen <= 0.005) return;
+  deckelZahlungTitel.textContent = `Teilbetrag bar bezahlen: ${eintrag.name}`;
   deckelZahlungOffen.textContent = `Offen: ${euro(eintrag.offen)}`;
   deckelZahlungBetragFeld.value = eintrag.offen.toFixed(2).replace(".", ",");
-  const barRadio = deckelZahlungOverlay.querySelector('input[name="deckel-zahlung-art"][value="bar"]');
-  if (barRadio) barRadio.checked = true;
   deckelZahlungFehler.textContent = "";
   deckelZahlungOverlay.classList.remove("versteckt");
+}
+
+// "Komplett bar bezahlen": ganzer offener Betrag, nach Rueckfrage.
+async function deckelKomplettBezahlen() {
+  if (!aktuellerDeckelId) return;
+  const eintrag = (await repo.deckelUebersicht()).find((d) => d.id === aktuellerDeckelId);
+  if (!eintrag || eintrag.offen <= 0.005) return;
+  const ok = await zeigeBestaetigung(
+    "Komplett bar bezahlt?",
+    `${euro(eintrag.offen)} von ${eintrag.name} bar in die Kasse gelegt?`,
+    "Ja, gebucht"
+  );
+  if (!ok) return;
+  const benutzer = session.getAktuellerBenutzer();
+  try {
+    await repo.deckelZahlungErfassen(aktuellerDeckelId, eintrag.offen, "bar", null, benutzer.name);
+  } catch (exc) {
+    zeigeHinweis("Fehler beim Bezahlen", exc.message ?? String(exc));
+    return;
+  }
+  await renderBierdeckel();
 }
 
 function deckelZahlungSchliessen() {
@@ -1445,19 +1477,22 @@ async function deckelZahlungBestaetigen() {
     deckelZahlungFehler.textContent = "Bitte einen gültigen Betrag größer als 0 eingeben.";
     return;
   }
-  const art =
-    deckelZahlungOverlay.querySelector('input[name="deckel-zahlung-art"]:checked')?.value ?? "bar";
-  if (art === "ausbuchung") {
-    const ok = await zeigeBestaetigung(
-      "Wirklich ausbuchen?",
-      `${euro(betrag)} werden ausgebucht und NICHT bezahlt. Es kommt kein Geld in die Kasse.`,
-      "Ausbuchen"
-    );
-    if (!ok) return;
+  const eintrag = (await repo.deckelUebersicht()).find((d) => d.id === aktuellerDeckelId);
+  if (!eintrag) return;
+  if (betrag < 0.01 || betrag > eintrag.offen + 0.005) {
+    deckelZahlungFehler.textContent =
+      `Der Betrag muss zwischen 0,01 € und ${euro(eintrag.offen)} (offen) liegen.`;
+    return;
   }
+  const ok = await zeigeBestaetigung(
+    "Teilbetrag bar bezahlt?",
+    `${euro(betrag)} von ${eintrag.name} bar in die Kasse gelegt?`,
+    "Ja, gebucht"
+  );
+  if (!ok) return;
   const benutzer = session.getAktuellerBenutzer();
   try {
-    await repo.deckelZahlungErfassen(aktuellerDeckelId, betrag, art, null, benutzer.name);
+    await repo.deckelZahlungErfassen(aktuellerDeckelId, betrag, "bar", null, benutzer.name);
   } catch (exc) {
     deckelZahlungFehler.textContent = exc.message ?? String(exc);
     return;
@@ -1473,16 +1508,22 @@ async function deckelBuchenOeffnen() {
     zeigeHinweis("Warenkorb ist leer", "Bitte zuerst Artikel in den Warenkorb legen, dann auf Deckel buchen.");
     return;
   }
-  const summe = warenkorbSumme();
-  if (summe <= 0) {
+  if (warenkorb.some((z) => z.istPfandrueckgabe)) {
     zeigeHinweis(
-      "Nicht auf Deckel buchbar",
-      "Auf einen Bierdeckel kann nur gebucht werden, wenn die Summe größer als 0 ist " +
-        "(nicht bei reiner Pfandrückgabe)."
+      "Pfandrückgabe nicht auf Deckel",
+      "Pfandrückgaben bitte separat bar über „Bezahlen“ abwickeln."
     );
     return;
   }
-  deckelBuchenSumme.textContent = euro(summe);
+  const summe = deckelSumme();
+  if (summe <= 0) {
+    zeigeHinweis(
+      "Nicht auf Deckel buchbar",
+      "Auf einen Bierdeckel kann nur gebucht werden, wenn die Summe (ohne Pfand) größer als 0 ist."
+    );
+    return;
+  }
+  deckelBuchenSumme.textContent = `${euro(summe)} (ohne Pfand)`;
   const kasse = session.getAktiveKasse();
   deckelBuchenKasse.textContent = `Aktive Kasse: ${KASSE_LABEL[kasse] ?? kasse}`;
   deckelBuchenNameFeld.value = "";
@@ -1509,7 +1550,7 @@ function deckelBuchenBestaetigungZeigen(name) {
   deckelBuchenGewaehlt = { name };
   const kasse = session.getAktiveKasse();
   deckelBestaetigungName.textContent = name;
-  deckelBestaetigungBetrag.textContent = euro(warenkorbSumme());
+  deckelBestaetigungBetrag.textContent = `${euro(deckelSumme())} (ohne Pfand)`;
   deckelBestaetigungHinweis.textContent =
     `Wird auf den Deckel geschrieben (${KASSE_LABEL[kasse] ?? kasse}). ` +
     "Das Geld kommt erst beim Bezahlen des Deckels in die Kasse.";
@@ -1535,7 +1576,11 @@ async function deckelBuchenAusfuehren() {
   const name = deckelBuchenGewaehlt?.name;
   if (!name || !warenkorb.length) return;
   const benutzer = session.getAktuellerBenutzer();
-  const summe = warenkorbSumme();
+  const summe = deckelSumme();
+  if (warenkorb.some((z) => z.istPfandrueckgabe)) {
+    zeigeHinweis("Pfandrückgabe nicht auf Deckel", "Pfandrückgaben bitte separat bar über „Bezahlen“ abwickeln.");
+    return;
+  }
   try {
     const deckelId = await repo.deckelAnlegen(name, benutzer.name);
     await repo.kassiervorgangAbschliessen(session.getAktiveKasse(), warenkorb, 0, benutzer.name, deckelId);
@@ -1551,7 +1596,7 @@ async function deckelBuchenAusfuehren() {
   aktualisierePfandmarkenAnzeige();
   deckelBuchenSchliessen();
   if (aktuelleAnsicht === "bierdeckel") renderBierdeckel();
-  zeigeHinweis("Auf Deckel gebucht", `${euro(summe)} auf den Deckel von ${name} gebucht.`);
+  zeigeHinweis("Auf Deckel gebucht", `${euro(summe)} (ohne Pfand) auf den Deckel von ${name} gebucht.`);
 }
 
 function bezahlenOeffnen() {
@@ -4083,7 +4128,14 @@ function wireEvents() {
   deckelBestaetigungBuchenBtn.onclick = einmalig(deckelBestaetigungBuchenBtn, deckelBuchenAusfuehren);
   deckelNeuBtn.onclick = einmalig(deckelNeuBtn, deckelNeuAnlegen);
   deckelZurueckBtn.onclick = deckelDetailSchliessen;
-  deckelBezahlenBtn.onclick = einmalig(deckelBezahlenBtn, deckelZahlungOeffnen);
+  // einmalig() entsperrt den Knopf im finally wieder - danach den Detailzustand
+  // (disabled bei offen <= 0) neu zeichnen, damit der Knopf grau bleibt.
+  const deckelKomplettEinmalig = einmalig(deckelKomplettBtn, deckelKomplettBezahlen);
+  deckelKomplettBtn.onclick = async () => {
+    await deckelKomplettEinmalig();
+    if (aktuellerDeckelId) await renderDeckelDetail();
+  };
+  deckelTeilbetragBtn.onclick = einmalig(deckelTeilbetragBtn, deckelZahlungOeffnen);
   deckelZahlungAbbrechenBtn.onclick = deckelZahlungSchliessen;
   deckelZahlungBestaetigenBtn.onclick = einmalig(deckelZahlungBestaetigenBtn, deckelZahlungBestaetigen);
   deckelBuchenOverlay.addEventListener("click", (ev) => {

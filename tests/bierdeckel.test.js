@@ -24,6 +24,7 @@ import {
   deckelZahlungStornieren,
   deckelVerlauf,
   offeneDeckelGesamt,
+  offenePfandmarkenJeKasse,
 } from "../js/repo.js";
 
 const STORES = [
@@ -338,4 +339,102 @@ test("bierdeckel: Buchung und Zahlung ueber mehrere Kassen - Bar-Zahlung zaehlt 
   nahe(await deckelOffen(id), 5, "offen ueber beide Kassen");
   await deckelZahlungErfassen(id, 5, "bar", null, "test");
   nahe(await soll(), soll0 + 5, "einmal +5");
+});
+
+// ---------------------------------------------------------------------
+// Runde 60: pfandfrei auf Deckel, Pfandrueckgabe nur bar, nur Barzahlung
+// ---------------------------------------------------------------------
+
+// 1 x Cola a 2,00 mit 2,00 Pfand; erlassen = Haekchen "Pfandmarke vorhanden".
+function colaMitPfand(erlassen) {
+  return [
+    {
+      produktId: "p-cola",
+      menge: 1,
+      einzelpreis: 2.0,
+      einkaufspreis: 1.0,
+      mwstSatz: 19,
+      pfandBetrag: erlassen ? 0 : 2.0,
+      pfandBetragOhneErlass: 2.0,
+      istHelferpreis: false,
+      istPfandrueckgabe: false,
+      pfandErlassen: erlassen,
+    },
+  ];
+}
+
+test("bierdeckel R60: Cola mit Pfand 2 geht pfandfrei auf den Deckel - mit und ohne Haekchen gleich", async () => {
+  for (const erlassen of [false, true]) {
+    await frischeDb();
+    const id = await deckelAnlegen("Stefan", "test");
+    const korb = colaMitPfand(erlassen);
+    const kopie = JSON.parse(JSON.stringify(korb));
+    const r = await kassiervorgangAbschliessen("Jugend", korb, 0, "test", id);
+    nahe(r.gesamtbetrag, 2, `Gesamtbetrag (erlassen=${erlassen})`);
+    const v = (await getAll("kassiervorgaenge")).find((x) => x.id === r.vorgangId);
+    nahe(v.gesamtbetrag, 2, "Vorgang 2,00");
+    const pos = (await getAll("positionen")).filter((p) => p.vorgang_id === r.vorgangId);
+    assert.strictEqual(pos.length, 1);
+    assert.strictEqual(pos[0].pfand_betrag, 0);
+    assert.strictEqual(pos[0].pfand_erlassen, 1);
+    nahe(await deckelOffen(id), 2, "offen 2,00");
+    // Warenkorb des Aufrufers bleibt unveraendert.
+    assert.deepStrictEqual(korb, kopie);
+  }
+});
+
+test("bierdeckel R60: Pfandrueckgabe + Deckel wirft Fehler und bucht nichts", async () => {
+  await frischeDb();
+  const id = await deckelAnlegen("Stefan", "test");
+  const vorher = {
+    v: (await getAll("kassiervorgaenge")).length,
+    p: (await getAll("positionen")).length,
+    l: (await getAll("lagerbewegungen")).length,
+  };
+  const korb = [
+    ...colaMitPfand(false),
+    {
+      produktId: "p-pfand",
+      menge: 1,
+      einzelpreis: 0,
+      einkaufspreis: 0,
+      mwstSatz: 0,
+      pfandBetrag: -2.0,
+      istHelferpreis: false,
+      istPfandrueckgabe: true,
+      pfandErlassen: false,
+    },
+  ];
+  await assert.rejects(
+    () => kassiervorgangAbschliessen("Jugend", korb, 0, "test", id),
+    /Pfandrückgaben bitte separat bar über „Bezahlen“ abwickeln\./
+  );
+  assert.strictEqual((await getAll("kassiervorgaenge")).length, vorher.v);
+  assert.strictEqual((await getAll("positionen")).length, vorher.p);
+  assert.strictEqual((await getAll("lagerbewegungen")).length, vorher.l);
+});
+
+test("bierdeckel R60: Pfandmarken-Zaehler vor und nach der Deckel-Buchung gleich", async () => {
+  await frischeDb();
+  const vorher = JSON.stringify(await offenePfandmarkenJeKasse());
+  const id = await deckelAnlegen("Stefan", "test");
+  await kassiervorgangAbschliessen("Jugend", colaMitPfand(false), 0, "test", id);
+  assert.strictEqual(JSON.stringify(await offenePfandmarkenJeKasse()), vorher);
+});
+
+test("bierdeckel R60: Komplettzahlung bar -> offen 0, Soll + Betrag; Teilzahlung laesst Rest offen", async () => {
+  await frischeDb();
+  const soll0 = await soll();
+  const id = await deckelAnlegen("Stefan", "test");
+  await kassiervorgangAbschliessen("Jugend", colaMitPfand(false), 0, "test", id); // 2,00
+  await kassiervorgangAbschliessen("Jugend", colaMitPfand(true), 0, "test", id); // 2,00
+  nahe(await deckelOffen(id), 4, "offen 4,00");
+
+  await deckelZahlungErfassen(id, 1.5, "bar", null, "test");
+  nahe(await deckelOffen(id), 2.5, "Rest offen nach Teilzahlung");
+  nahe(await soll(), soll0 + 1.5, "Soll + Teilbetrag");
+
+  await deckelZahlungErfassen(id, await deckelOffen(id), "bar", null, "test");
+  nahe(await deckelOffen(id), 0, "offen 0 nach Komplettzahlung");
+  nahe(await soll(), soll0 + 4, "Soll + Gesamtbetrag");
 });

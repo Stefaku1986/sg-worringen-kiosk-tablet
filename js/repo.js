@@ -298,6 +298,21 @@ export async function kassiervorgangAbschliessen(
   deckelId = null
 ) {
   if (!warenkorb.length) throw new Error("Warenkorb ist leer.");
+  if (deckelId) {
+    // Runde 60: Auf Deckel gibt es kein Pfand. Pfandrueckgaben gehen nur bar
+    // ueber "Bezahlen"; alle anderen Positionen werden pfandfrei (pfand_betrag
+    // 0, pfand_erlassen true, sofern sie Pfand hatten) gebucht - unabhaengig
+    // vom Haekchen "Pfandmarke vorhanden". Der Warenkorb des Aufrufers bleibt
+    // unveraendert (es wird nur eine Kopie angepasst).
+    if (warenkorb.some((p) => p.istPfandrueckgabe)) {
+      throw new Error("Pfandrückgaben bitte separat bar über „Bezahlen“ abwickeln.");
+    }
+    warenkorb = warenkorb.map((p) => {
+      const hattePfand =
+        (p.pfandBetrag || 0) > 0 || (p.pfandBetragOhneErlass || 0) > 0 || !!p.pfandErlassen;
+      return hattePfand ? { ...p, pfandBetrag: 0, pfandErlassen: true } : { ...p, pfandBetrag: 0 };
+    });
+  }
   const gesamtbetrag = rund2(
     warenkorb.reduce((s, p) => s + p.menge * (p.einzelpreis + (p.pfandBetrag || 0)), 0)
   );
