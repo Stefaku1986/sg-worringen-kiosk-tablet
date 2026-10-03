@@ -41,6 +41,7 @@
 
     <nav id="tabs" style="display:none;">
       <button id="tab-verkauf" class="aktiv">Verkauf</button>
+      <button id="tab-bierdeckel">🍺 Bierdeckel</button>
       <button id="tab-storno">Stornieren</button>
       <button id="tab-kassensturz">Kassensturz</button>
       <button id="tab-schiedsrichter">Schiedsrichter</button>
@@ -127,7 +128,38 @@
             <button id="tee-trainer-btn" class="btn">🫖 Tee für Trainer</button>
           </div>
           <div id="summe">Summe: 0,00 €</div>
-          <button id="bezahlen-btn" class="btn btn-primaer">Bezahlen</button>
+          <!-- Runde 59: "Auf Deckel" (anschreiben) neben "Bezahlen" -->
+          <div id="bezahl-zeile">
+            <button id="bezahlen-btn" class="btn btn-primaer">Bezahlen</button>
+            <button id="auf-deckel-btn" class="btn btn-primaer btn-deckel">🍺 Auf Deckel</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Bierdeckel (Runde 59): anschreiben, spaeter bezahlen -->
+      <section id="bierdeckel-view" style="display:none;">
+        <div class="karte" id="deckel-liste-karte">
+          <div class="deckel-kopfzeile">
+            <h2 style="margin:0; color:var(--blau-dunkel);">Bierdeckel</h2>
+            <button id="deckel-neu-btn" class="btn btn-primaer btn-deckel">Neuer Deckel</button>
+          </div>
+          <p class="hinweis">Offene Deckel stehen oben. Antippen zeigt den Verlauf und erlaubt das Bezahlen.</p>
+          <div id="deckel-grid" class="deckel-grid"></div>
+          <p id="deckel-leer-hinweis" class="hinweis" style="display:none;">Noch keine Bierdeckel angelegt.</p>
+        </div>
+        <div class="karte" id="deckel-detail-karte" style="display:none;">
+          <div class="deckel-kopfzeile">
+            <button id="deckel-zurueck-btn" class="btn">← Alle Deckel</button>
+            <button id="deckel-bezahlen-btn" class="btn btn-primaer btn-deckel">Bezahlen</button>
+          </div>
+          <h2 id="deckel-detail-name" style="color:var(--blau-dunkel); margin-bottom:4px;"></h2>
+          <div id="deckel-detail-offen" class="deckel-offen-gross"></div>
+          <table class="liste" id="deckel-verlauf-tabelle">
+            <thead>
+              <tr><th>Datum</th><th>Was</th><th>Betrag</th><th>Status</th><th></th></tr>
+            </thead>
+            <tbody></tbody>
+          </table>
         </div>
       </section>
 
@@ -157,6 +189,8 @@
           <div class="kennzahl-zeile"><span>Bargeld-Einzahlungen</span><span id="ks-einzahlungen"></span></div>
           <div class="kennzahl-zeile"><span>Bargeld-Entnahmen</span><span id="ks-entnahmen"></span></div>
           <div class="kennzahl-zeile"><span>Nachbestellungen (bar bezahlt)</span><span id="ks-nachbestellungen"></span></div>
+          <div class="kennzahl-zeile"><span>+ Bezahlte Bierdeckel (bar)</span><span id="ks-deckel-zahlungen"></span></div>
+          <div class="kennzahl-zeile" id="ks-deckel-offen-zeile" style="display:none; color:#666;"><span>Offene Bierdeckel (nur zur Info)</span><span id="ks-deckel-offen"></span></div>
           <div class="kennzahl-zeile gesamt"><span>Soll (gesamt)</span><span id="ks-soll"></span></div>
 
           <div id="ks-soll-negativ-warnung" class="warnung" style="display:none; margin-top:12px; color:var(--rot);">
@@ -677,6 +711,58 @@
     </div>
   </div>
 
+  <!-- Auf Bierdeckel buchen (Runde 59): Schritt 1 = Deckel waehlen/anlegen,
+       Schritt 2 = Bestaetigung mit Name und Betrag gross. -->
+  <div id="deckel-buchen-overlay" class="overlay versteckt">
+    <div class="modal">
+      <h2>Auf Bierdeckel buchen</h2>
+      <div id="deckel-buchen-wahl">
+        <p class="deckel-gross" id="deckel-buchen-summe"></p>
+        <p class="deckel-mittel" id="deckel-buchen-kasse"></p>
+        <p class="hinweis" style="margin-bottom:6px;">Offenen Deckel antippen:</p>
+        <div id="deckel-buchen-kacheln" class="deckel-grid"></div>
+        <p id="deckel-buchen-keine" class="hinweis" style="display:none;">Es gibt keine offenen Deckel.</p>
+        <label style="margin-top:12px;"><b>Neuer Deckel – Name:</b></label>
+        <input type="text" class="betrag" id="deckel-buchen-name-feld" placeholder="z.B. Stefan" />
+        <div id="deckel-buchen-fehler" class="pin-fehler"></div>
+        <div class="aktionen">
+          <button id="deckel-buchen-abbrechen-btn" class="btn">Abbrechen</button>
+          <button id="deckel-buchen-neu-btn" class="btn btn-primaer btn-deckel">Neuer Deckel</button>
+        </div>
+      </div>
+      <div id="deckel-buchen-bestaetigung" style="display:none;">
+        <p class="hinweis" style="text-align:center;">Wirklich auf diesen Deckel buchen?</p>
+        <p class="deckel-gross" id="deckel-bestaetigung-name"></p>
+        <p class="deckel-gross" id="deckel-bestaetigung-betrag"></p>
+        <p class="hinweis" id="deckel-bestaetigung-hinweis" style="text-align:center;"></p>
+        <div class="aktionen">
+          <button id="deckel-bestaetigung-zurueck-btn" class="btn">Zurück</button>
+          <button id="deckel-bestaetigung-buchen-btn" class="btn btn-primaer btn-deckel">Jetzt buchen</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Bierdeckel bezahlen (Runde 59) -->
+  <div id="deckel-zahlung-overlay" class="overlay versteckt">
+    <div class="modal">
+      <h2 id="deckel-zahlung-titel">Bierdeckel bezahlen</h2>
+      <p class="deckel-mittel" id="deckel-zahlung-offen"></p>
+      <label><b>Betrag (Teilbetrag möglich):</b></label>
+      <input type="text" inputmode="decimal" class="betrag" id="deckel-zahlung-betrag-feld" />
+      <div class="deckel-arten" id="deckel-zahlung-arten">
+        <label class="deckel-art"><input type="radio" name="deckel-zahlung-art" value="bar" checked /> <span>Bar – Geld liegt JETZT in der Kasse</span></label>
+        <label class="deckel-art"><input type="radio" name="deckel-zahlung-art" value="ueberweisung" /> <span>Überweisung aufs Vereinskonto</span></label>
+        <label class="deckel-art"><input type="radio" name="deckel-zahlung-art" value="ausbuchung" /> <span>Ausbuchen – wird nicht bezahlt</span></label>
+      </div>
+      <div id="deckel-zahlung-fehler" class="pin-fehler"></div>
+      <div class="aktionen">
+        <button id="deckel-zahlung-abbrechen-btn" class="btn">Abbrechen</button>
+        <button id="deckel-zahlung-bestaetigen-btn" class="btn btn-primaer btn-deckel">Buchen</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Hinweis-Dialog (Internet, Bestätigungen usw.) -->
   <div id="hinweis-overlay" class="overlay versteckt">
     <div class="modal">
@@ -711,6 +797,20 @@
         automatisch berechnet. Der Knopf <b>„☕ Kaffee für Trainer
         (kostenlos)“</b> bucht mit einem Klick sofort 1x Kaffee kostenlos
         (Bestand sinkt), ganz ohne Warenkorb und ohne Bezahlvorgang.</p>
+
+        <h3>Bierdeckel (anschreiben)</h3>
+        <p>Wer erst später zahlt, bekommt einen <b>Bierdeckel</b>: im Verkauf
+        statt „Bezahlen“ auf <b>„🍺 Auf Deckel“</b> tippen, den Deckel (oder
+        einen neuen Namen) wählen und bestätigen. Der Verkauf zählt sofort
+        für Umsatz, Lager und Pfand – aber <b>nicht</b> als Bargeld in der
+        Kasse. Im Reiter <b>„🍺 Bierdeckel“</b> stehen alle Deckel, offene
+        zuerst. Beim <b>Bezahlen</b> (auch Teilbeträge) wählt man die Art:
+        <b>Bar</b> (das Geld liegt jetzt in der Kasse und erhöht das
+        Kassensturz-Soll), <b>Überweisung</b> aufs Vereinskonto oder
+        <b>Ausbuchen</b> (wird nicht bezahlt) – die beiden letzten ändern das
+        Soll nicht. Eine falsche Zahlung lässt sich per <b>Storno</b> im
+        Verlauf zurücknehmen. Nach dem Anmelden erscheint eine Liste aller
+        offenen Deckel.</p>
 
         <h3>Storno</h3>
         <p>Im Reiter <b>„Stornieren“</b> stehen die letzten Kassiervorgänge –

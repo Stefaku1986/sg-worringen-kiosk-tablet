@@ -98,6 +98,47 @@ const warenwirtschaftView = el("warenwirtschaft-view");
 const auswertungView = el("auswertung-view");
 const adminView = el("admin-view");
 
+// Runde 59: Bierdeckel (anschreiben, spaeter bezahlen)
+const tabBierdeckel = el("tab-bierdeckel");
+const bierdeckelView = el("bierdeckel-view");
+const aufDeckelBtn = el("auf-deckel-btn");
+const deckelListeKarte = el("deckel-liste-karte");
+const deckelDetailKarte = el("deckel-detail-karte");
+const deckelGrid = el("deckel-grid");
+const deckelLeerHinweis = el("deckel-leer-hinweis");
+const deckelNeuBtn = el("deckel-neu-btn");
+const deckelZurueckBtn = el("deckel-zurueck-btn");
+const deckelBezahlenBtn = el("deckel-bezahlen-btn");
+const deckelDetailName = el("deckel-detail-name");
+const deckelDetailOffen = el("deckel-detail-offen");
+const deckelVerlaufBody = el("deckel-verlauf-tabelle").querySelector("tbody");
+const deckelBuchenOverlay = el("deckel-buchen-overlay");
+const deckelBuchenWahl = el("deckel-buchen-wahl");
+const deckelBuchenSumme = el("deckel-buchen-summe");
+const deckelBuchenKasse = el("deckel-buchen-kasse");
+const deckelBuchenKacheln = el("deckel-buchen-kacheln");
+const deckelBuchenKeine = el("deckel-buchen-keine");
+const deckelBuchenNameFeld = el("deckel-buchen-name-feld");
+const deckelBuchenFehler = el("deckel-buchen-fehler");
+const deckelBuchenAbbrechenBtn = el("deckel-buchen-abbrechen-btn");
+const deckelBuchenNeuBtn = el("deckel-buchen-neu-btn");
+const deckelBuchenBestaetigung = el("deckel-buchen-bestaetigung");
+const deckelBestaetigungName = el("deckel-bestaetigung-name");
+const deckelBestaetigungBetrag = el("deckel-bestaetigung-betrag");
+const deckelBestaetigungHinweis = el("deckel-bestaetigung-hinweis");
+const deckelBestaetigungZurueckBtn = el("deckel-bestaetigung-zurueck-btn");
+const deckelBestaetigungBuchenBtn = el("deckel-bestaetigung-buchen-btn");
+const deckelZahlungOverlay = el("deckel-zahlung-overlay");
+const deckelZahlungTitel = el("deckel-zahlung-titel");
+const deckelZahlungOffen = el("deckel-zahlung-offen");
+const deckelZahlungBetragFeld = el("deckel-zahlung-betrag-feld");
+const deckelZahlungFehler = el("deckel-zahlung-fehler");
+const deckelZahlungAbbrechenBtn = el("deckel-zahlung-abbrechen-btn");
+const deckelZahlungBestaetigenBtn = el("deckel-zahlung-bestaetigen-btn");
+const ksDeckelZahlungen = el("ks-deckel-zahlungen");
+const ksDeckelOffenZeile = el("ks-deckel-offen-zeile");
+const ksDeckelOffen = el("ks-deckel-offen");
+
 const loginNutzerauswahl = el("login-nutzerauswahl");
 const nutzerGrid = el("nutzer-grid");
 const loginLeerHinweis = el("login-leer-hinweis");
@@ -394,8 +435,16 @@ let letzteMonatsabrechnung = null; // fuer den Drucken-Knopf, siehe monatsabrech
 // Hinweis-/Bestaetigungs-Dialog
 // ---------------------------------------------------------------------
 
+// Runde 59: optionale Folge-Aktion, die einmalig NACH dem Schliessen des
+// aktuellen Hinweises laeuft (z.B. "Offene Bierdeckel" nach dem
+// Kassensturz-Hinweis beim Anmelden - es gibt nur EIN Hinweis-Overlay).
+let hinweisNachSchliessen = null;
+
 function hinweisSchliessen() {
   hinweisOverlay.classList.add("versteckt");
+  const folge = hinweisNachSchliessen;
+  hinweisNachSchliessen = null;
+  if (folge) folge();
 }
 
 // Runde 46: Aufloesung des gerade offenen Bestaetigungs-/Eingabe-Dialogs,
@@ -570,6 +619,7 @@ function zeigeHauptView(name) {
   if (name === "login") {
     loginView.style.display = "";
     verkaufView.style.display = "none";
+    bierdeckelView.style.display = "none";
     stornoView.style.display = "none";
     kassensturzView.style.display = "none";
     schiedsrichterView.style.display = "none";
@@ -603,6 +653,7 @@ function zeigeHauptView(name) {
   abmeldenBtn.style.display = "";
 
   verkaufView.style.display = name === "verkauf" ? "flex" : "none";
+  bierdeckelView.style.display = name === "bierdeckel" ? "" : "none";
   stornoView.style.display = name === "storno" ? "" : "none";
   kassensturzView.style.display = name === "kassensturz" ? "" : "none";
   schiedsrichterView.style.display = name === "schiedsrichter" ? "" : "none";
@@ -625,6 +676,7 @@ function zeigeHauptView(name) {
   mehrTabsEl.style.display = istMehrAnsicht ? "flex" : "none";
 
   tabVerkauf.classList.toggle("aktiv", name === "verkauf");
+  tabBierdeckel.classList.toggle("aktiv", name === "bierdeckel");
   tabStorno.classList.toggle("aktiv", name === "storno");
   tabKassensturz.classList.toggle("aktiv", name === "kassensturz");
   tabMehr.classList.toggle("aktiv", istMehrAnsicht);
@@ -643,6 +695,7 @@ function zeigeHauptView(name) {
     renderProduktGrid();
     aktualisierePfandmarkenAnzeige();
   }
+  if (name === "bierdeckel") renderBierdeckel();
   if (name === "storno") renderStornoListe();
   if (name === "kassensturz") renderKassensturz();
   if (name === "schiedsrichter") renderSchiedsrichter();
@@ -802,7 +855,16 @@ async function pinBestaetigen() {
   // das schwerwiegende Folgen hatte.
   loginPinEingabe.style.display = "none";
   nachAnmeldungAnzeigen();
-  kassensturzHinweisPruefenUndAnzeigen();
+  const kassensturzHinweisGezeigt = kassensturzHinweisPruefenUndAnzeigen();
+  // Runde 59: bei jeder Anmeldung offene Bierdeckel anzeigen - nach dem
+  // Kassensturz-Hinweis, falls dieser gerade offen ist.
+  if (kassensturzHinweisGezeigt) {
+    hinweisNachSchliessen = () => {
+      offeneDeckelHinweisAnzeigen();
+    };
+  } else {
+    offeneDeckelHinweisAnzeigen();
+  }
 }
 
 // Runde 39: Erinnerung "Kasse einmal zaehlen", nur beim allerersten Login
@@ -814,7 +876,7 @@ async function pinBestaetigen() {
 function kassensturzHinweisPruefenUndAnzeigen() {
   const heute = new Date().toISOString().slice(0, 10);
   try {
-    if (localStorage.getItem("kassensturz_hinweis_datum") === heute) return;
+    if (localStorage.getItem("kassensturz_hinweis_datum") === heute) return false;
     localStorage.setItem("kassensturz_hinweis_datum", heute);
   } catch (exc) {
     // localStorage kann in seltenen Faellen (z.B. privater Modus mit
@@ -826,6 +888,21 @@ function kassensturzHinweisPruefenUndAnzeigen() {
     "Bitte heute einmal die Kasse zählen (Kassensturz), bevor es losgeht " +
       "– am besten gleich zu Beginn."
   );
+  return true;
+}
+
+// Runde 59: Hinweis "Offene Bierdeckel" bei jeder erfolgreichen Anmeldung.
+// Ohne offene Deckel (offen > 0) erscheint nichts.
+async function offeneDeckelHinweisAnzeigen() {
+  try {
+    const offene = (await repo.deckelUebersicht({ nurOffene: true })).filter((d) => d.offen > 0);
+    if (!offene.length) return;
+    const summe = rund2(offene.reduce((s, d) => s + d.offen, 0));
+    const zeilen = offene.map((d) => `${d.name}: ${euro(d.offen)}`);
+    zeigeHinweis("Offene Bierdeckel", `${zeilen.join("\n")}\n\nSumme: ${euro(summe)}`);
+  } catch (exc) {
+    console.error("Fehler beim Anzeigen der offenen Bierdeckel:", exc);
+  }
 }
 
 function nachAnmeldungAnzeigen() {
@@ -845,6 +922,7 @@ function nachAnmeldungAnzeigen() {
   nachbestellungFormularLeeren();
   helferpreisAktiv = false;
   abgelehnteKassenvorschlaege = new Set();
+  aktuellerDeckelId = null; // Runde 59: Bierdeckel-Reiter startet mit der Liste
   zeigeHauptView("verkauf");
   pruefeKassenvorschlag();
 }
@@ -1212,6 +1290,270 @@ async function aktualisierePfandmarkenAnzeige() {
   }
 }
 
+// ---------------------------------------------------------------------
+// Bierdeckel (Runde 59): anschreiben, spaeter bezahlen
+// ---------------------------------------------------------------------
+
+let aktuellerDeckelId = null; // Detailansicht im Reiter "Bierdeckel", sonst null
+let deckelBuchenGewaehlt = null; // { name } waehrend "Auf Bierdeckel buchen"
+
+function deckelOffenText(offen) {
+  if (offen > 0) return `offen: ${euro(offen)}`;
+  if (offen < 0) return `Guthaben: ${euro(-offen)}`;
+  return "bezahlt";
+}
+
+function deckelKachelBauen(d, beiTipp) {
+  const btn = document.createElement("button");
+  btn.type = "button";
+  if (d.offen === 0) btn.classList.add("deckel-bezahlt");
+  btn.textContent = d.name;
+  const betrag = document.createElement("span");
+  betrag.className = "deckel-kachel-betrag";
+  betrag.textContent = deckelOffenText(d.offen);
+  btn.appendChild(betrag);
+  btn.onclick = beiTipp;
+  return btn;
+}
+
+async function renderBierdeckel() {
+  if (aktuellerDeckelId) {
+    await renderDeckelDetail();
+    return;
+  }
+  deckelListeKarte.style.display = "";
+  deckelDetailKarte.style.display = "none";
+  const liste = await repo.deckelUebersicht();
+  deckelGrid.innerHTML = "";
+  deckelLeerHinweis.style.display = liste.length ? "none" : "";
+  for (const d of liste) {
+    deckelGrid.appendChild(
+      deckelKachelBauen(d, () => {
+        aktuellerDeckelId = d.id;
+        renderBierdeckel();
+      })
+    );
+  }
+}
+
+function deckelDetailSchliessen() {
+  aktuellerDeckelId = null;
+  renderBierdeckel();
+}
+
+async function renderDeckelDetail() {
+  const id = aktuellerDeckelId;
+  const eintrag = (await repo.deckelUebersicht()).find((d) => d.id === id);
+  if (!eintrag) {
+    aktuellerDeckelId = null;
+    await renderBierdeckel();
+    return;
+  }
+  deckelListeKarte.style.display = "none";
+  deckelDetailKarte.style.display = "";
+  deckelDetailName.textContent = eintrag.name;
+  deckelDetailOffen.textContent =
+    eintrag.offen > 0
+      ? `Offen: ${euro(eintrag.offen)}`
+      : eintrag.offen < 0
+        ? `Guthaben: ${euro(-eintrag.offen)}`
+        : "Bezahlt - nichts offen";
+  deckelBezahlenBtn.disabled = eintrag.offen <= 0;
+
+  const verlauf = await repo.deckelVerlauf(id);
+  deckelVerlaufBody.innerHTML = "";
+  for (const e of verlauf) {
+    const tr = document.createElement("tr");
+    const istStorno = !!e.storno_von;
+    if (istStorno || e.storniert) tr.classList.add("storniert");
+    const tdDatum = document.createElement("td");
+    tdDatum.textContent = formatDatumUhrzeit(e.datum);
+    const tdText = document.createElement("td");
+    tdText.textContent = e.text;
+    // Wirkung auf den offenen Betrag: Buchung +, Zahlung -.
+    const tdBetrag = document.createElement("td");
+    tdBetrag.textContent = euro(e.typ === "Zahlung" ? -e.betrag : e.betrag, true);
+    const tdStatus = document.createElement("td");
+    tdStatus.textContent = istStorno ? "Storno" : e.storniert ? "Storniert" : "";
+    const tdAktion = document.createElement("td");
+    if (e.typ === "Zahlung" && !istStorno && !e.storniert) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "btn";
+      btn.textContent = "Stornieren";
+      btn.onclick = einmalig(btn, () => deckelZahlungStornieren(e));
+      tdAktion.appendChild(btn);
+    }
+    for (const td of [tdDatum, tdText, tdBetrag, tdStatus, tdAktion]) tr.appendChild(td);
+    deckelVerlaufBody.appendChild(tr);
+  }
+}
+
+async function deckelZahlungStornieren(eintrag) {
+  const ok = await zeigeBestaetigung(
+    "Zahlung stornieren?",
+    `${eintrag.text} über ${euro(eintrag.betrag)} vom ${formatDatumUhrzeit(eintrag.datum)} wird storniert. ` +
+      "Das kann nicht rückgängig gemacht werden.",
+    "Stornieren"
+  );
+  if (!ok) return;
+  const benutzer = session.getAktuellerBenutzer();
+  const ergebnis = await gebucht("Das Storno der Zahlung", () =>
+    repo.deckelZahlungStornieren(eintrag.id, benutzer.name)
+  );
+  if (ergebnis === FEHLGESCHLAGEN) return;
+  await renderBierdeckel();
+}
+
+async function deckelNeuAnlegen() {
+  const eingabe = await zeigeTextEingabe("Neuer Deckel", "Name für den neuen Bierdeckel:");
+  if (eingabe === null) return;
+  if (!eingabe.trim()) {
+    zeigeHinweis("Name fehlt", "Bitte einen Namen eingeben.");
+    return;
+  }
+  const benutzer = session.getAktuellerBenutzer();
+  const id = await gebucht("Der Deckel", () => repo.deckelAnlegen(eingabe, benutzer.name));
+  if (id === FEHLGESCHLAGEN) return;
+  aktuellerDeckelId = id;
+  await renderBierdeckel();
+}
+
+// --- Deckel bezahlen -------------------------------------------------
+
+async function deckelZahlungOeffnen() {
+  if (!aktuellerDeckelId) return;
+  const eintrag = (await repo.deckelUebersicht()).find((d) => d.id === aktuellerDeckelId);
+  if (!eintrag || eintrag.offen <= 0) return;
+  deckelZahlungTitel.textContent = `Bierdeckel bezahlen: ${eintrag.name}`;
+  deckelZahlungOffen.textContent = `Offen: ${euro(eintrag.offen)}`;
+  deckelZahlungBetragFeld.value = eintrag.offen.toFixed(2).replace(".", ",");
+  const barRadio = deckelZahlungOverlay.querySelector('input[name="deckel-zahlung-art"][value="bar"]');
+  if (barRadio) barRadio.checked = true;
+  deckelZahlungFehler.textContent = "";
+  deckelZahlungOverlay.classList.remove("versteckt");
+}
+
+function deckelZahlungSchliessen() {
+  deckelZahlungOverlay.classList.add("versteckt");
+}
+
+async function deckelZahlungBestaetigen() {
+  deckelZahlungFehler.textContent = "";
+  const betrag = betragLesen(deckelZahlungBetragFeld);
+  if (isNaN(betrag) || betrag <= 0) {
+    deckelZahlungFehler.textContent = "Bitte einen gültigen Betrag größer als 0 eingeben.";
+    return;
+  }
+  const art =
+    deckelZahlungOverlay.querySelector('input[name="deckel-zahlung-art"]:checked')?.value ?? "bar";
+  if (art === "ausbuchung") {
+    const ok = await zeigeBestaetigung(
+      "Wirklich ausbuchen?",
+      `${euro(betrag)} werden ausgebucht und NICHT bezahlt. Es kommt kein Geld in die Kasse.`,
+      "Ausbuchen"
+    );
+    if (!ok) return;
+  }
+  const benutzer = session.getAktuellerBenutzer();
+  try {
+    await repo.deckelZahlungErfassen(aktuellerDeckelId, betrag, art, null, benutzer.name);
+  } catch (exc) {
+    deckelZahlungFehler.textContent = exc.message ?? String(exc);
+    return;
+  }
+  deckelZahlungSchliessen();
+  await renderBierdeckel();
+}
+
+// --- Auf Deckel buchen (aus dem Verkauf) -------------------------------
+
+async function deckelBuchenOeffnen() {
+  if (!warenkorb.length) {
+    zeigeHinweis("Warenkorb ist leer", "Bitte zuerst Artikel in den Warenkorb legen, dann auf Deckel buchen.");
+    return;
+  }
+  const summe = warenkorbSumme();
+  if (summe <= 0) {
+    zeigeHinweis(
+      "Nicht auf Deckel buchbar",
+      "Auf einen Bierdeckel kann nur gebucht werden, wenn die Summe größer als 0 ist " +
+        "(nicht bei reiner Pfandrückgabe)."
+    );
+    return;
+  }
+  deckelBuchenSumme.textContent = euro(summe);
+  const kasse = session.getAktiveKasse();
+  deckelBuchenKasse.textContent = `Aktive Kasse: ${KASSE_LABEL[kasse] ?? kasse}`;
+  deckelBuchenNameFeld.value = "";
+  deckelBuchenFehler.textContent = "";
+  deckelBuchenGewaehlt = null;
+  deckelBuchenWahl.style.display = "";
+  deckelBuchenBestaetigung.style.display = "none";
+
+  const liste = await repo.deckelUebersicht();
+  deckelBuchenKacheln.innerHTML = "";
+  deckelBuchenKeine.style.display = liste.length ? "none" : "";
+  for (const d of liste) {
+    deckelBuchenKacheln.appendChild(deckelKachelBauen(d, () => deckelBuchenBestaetigungZeigen(d.name)));
+  }
+  deckelBuchenOverlay.classList.remove("versteckt");
+}
+
+function deckelBuchenSchliessen() {
+  deckelBuchenOverlay.classList.add("versteckt");
+  deckelBuchenGewaehlt = null;
+}
+
+function deckelBuchenBestaetigungZeigen(name) {
+  deckelBuchenGewaehlt = { name };
+  const kasse = session.getAktiveKasse();
+  deckelBestaetigungName.textContent = name;
+  deckelBestaetigungBetrag.textContent = euro(warenkorbSumme());
+  deckelBestaetigungHinweis.textContent =
+    `Wird auf den Deckel geschrieben (${KASSE_LABEL[kasse] ?? kasse}). ` +
+    "Das Geld kommt erst beim Bezahlen des Deckels in die Kasse.";
+  deckelBuchenWahl.style.display = "none";
+  deckelBuchenBestaetigung.style.display = "";
+}
+
+async function deckelBuchenNeuerDeckel() {
+  const roh = deckelBuchenNameFeld.value;
+  if (!roh.trim()) {
+    deckelBuchenFehler.textContent = "Bitte einen Namen für den neuen Deckel eingeben.";
+    return;
+  }
+  deckelBuchenFehler.textContent = "";
+  // Existiert der Deckel schon (gleicher Name, egal wie geschrieben), dessen
+  // Anzeigenamen verwenden. Angelegt wird er erst beim eigentlichen Buchen.
+  const id = await repo.deckelIdFuerName(roh);
+  const vorhanden = (await repo.deckelUebersicht()).find((d) => d.id === id);
+  deckelBuchenBestaetigungZeigen(vorhanden ? vorhanden.name : roh.trim().split(/\s+/).join(" "));
+}
+
+async function deckelBuchenAusfuehren() {
+  const name = deckelBuchenGewaehlt?.name;
+  if (!name || !warenkorb.length) return;
+  const benutzer = session.getAktuellerBenutzer();
+  const summe = warenkorbSumme();
+  try {
+    const deckelId = await repo.deckelAnlegen(name, benutzer.name);
+    await repo.kassiervorgangAbschliessen(session.getAktiveKasse(), warenkorb, 0, benutzer.name, deckelId);
+  } catch (exc) {
+    zeigeHinweis("Fehler beim Buchen auf Deckel", exc.message ?? String(exc));
+    return;
+  }
+  // Aufraeumen wie nach dem normalen Bezahlen.
+  warenkorb = [];
+  helferpreisAktiv = false;
+  helferpreisBtn.classList.remove("aktiv");
+  renderWarenkorb();
+  aktualisierePfandmarkenAnzeige();
+  deckelBuchenSchliessen();
+  if (aktuelleAnsicht === "bierdeckel") renderBierdeckel();
+  zeigeHinweis("Auf Deckel gebucht", `${euro(summe)} auf den Deckel von ${name} gebucht.`);
+}
+
 function bezahlenOeffnen() {
   if (!warenkorb.length) return;
   const summe = warenkorbSumme();
@@ -1308,6 +1650,8 @@ async function renderStornoListe() {
   const stornierteIds = new Set(alle.filter((v) => v.storno_von).map((v) => v.storno_von));
   const aktiveKasse = session.getAktiveKasse();
   const anzeige = alle.filter((v) => v.veranstaltung === aktiveKasse).slice(0, 50);
+  // Runde 59: Deckel-Vorgaenge kenntlich machen ("Deckel: Name").
+  const deckelNamen = new Map((await repo.deckelUebersicht()).map((d) => [d.id, d.name]));
 
   stornoTabelleBody.innerHTML = "";
   for (const vorgang of anzeige) {
@@ -1321,6 +1665,9 @@ async function renderStornoListe() {
     tdDatum.textContent = formatDatumUhrzeit(vorgang.datum);
     const tdKasse = document.createElement("td");
     tdKasse.textContent = KASSE_LABEL[vorgang.veranstaltung] ?? vorgang.veranstaltung;
+    if (vorgang.deckel_id) {
+      tdKasse.textContent += ` (Deckel: ${deckelNamen.get(vorgang.deckel_id) ?? "?"})`;
+    }
     const tdBetrag = document.createElement("td");
     tdBetrag.textContent = euro(vorgang.gesamtbetrag, true);
     const tdStatus = document.createElement("td");
@@ -1411,7 +1758,9 @@ async function renderKassensturz() {
     ksSonstigeAusgaben.textContent = "–";
     ksEinzahlungen.textContent = "–";
     ksEntnahmen.textContent = "–";
+    ksDeckelOffenZeile.style.display = "none";
     ksNachbestellungen.textContent = "–";
+    ksDeckelZahlungen.textContent = "–";
     ksSoll.textContent = "–";
     sollNegativWarnung.style.display = "none";
     ksGezaehltFeld.value = "";
@@ -1437,6 +1786,11 @@ async function renderKassensturz() {
   ksEinzahlungen.textContent = euro(vorschau.einzahlungen);
   ksEntnahmen.textContent = euro(vorschau.entnahmen);
   ksNachbestellungen.textContent = euro(vorschau.nachbestellungen ?? 0);
+  // Runde 59: bar bezahlte Bierdeckel erhoehen das Soll; offene Deckel nur zur Info.
+  ksDeckelZahlungen.textContent = euro(vorschau.deckelZahlungen ?? 0, true);
+  const offeneDeckelSumme = vorschau.offeneDeckel ?? 0;
+  ksDeckelOffenZeile.style.display = offeneDeckelSumme !== 0 ? "" : "none";
+  ksDeckelOffen.textContent = euro(offeneDeckelSumme);
   ksSoll.textContent = euro(vorschau.soll);
 
   sollNegativWarnung.style.display = vorschau.sollNegativ ? "" : "none";
@@ -2508,6 +2862,7 @@ function aktualisiereAktuelleAnsichtNachKassenwechsel() {
     renderProduktGrid();
     aktualisierePfandmarkenAnzeige();
   }
+  if (aktuelleAnsicht === "bierdeckel") renderBierdeckel();
   if (aktuelleAnsicht === "storno") renderStornoListe();
   if (aktuelleAnsicht === "kassensturz") renderKassensturz();
   if (aktuelleAnsicht === "schiedsrichter") renderSchiedsrichter();
@@ -3484,6 +3839,8 @@ async function nachSyncAktualisieren() {
     renderLoginNutzer();
   } else if (aktuelleAnsicht === "verkauf") {
     renderProduktGrid();
+  } else if (aktuelleAnsicht === "bierdeckel") {
+    renderBierdeckel();
   } else if (aktuelleAnsicht === "storno") {
     renderStornoListe();
   } else if (aktuelleAnsicht === "kassensturz") {
@@ -3712,6 +4069,29 @@ function wireEvents() {
   bezahlenBtn.onclick = bezahlenOeffnen;
   bezahlenAbbrechenBtn.onclick = bezahlenSchliessen;
   bezahlenBestaetigenBtn.onclick = einmalig(bezahlenBestaetigenBtn, bezahlenBestaetigen);
+
+  // Runde 59: Bierdeckel
+  tabBierdeckel.onclick = () => zeigeHauptView("bierdeckel");
+  aufDeckelBtn.onclick = deckelBuchenOeffnen;
+  deckelBuchenAbbrechenBtn.onclick = deckelBuchenSchliessen;
+  deckelBuchenNeuBtn.onclick = einmalig(deckelBuchenNeuBtn, deckelBuchenNeuerDeckel);
+  deckelBestaetigungZurueckBtn.onclick = () => {
+    deckelBuchenGewaehlt = null;
+    deckelBuchenBestaetigung.style.display = "none";
+    deckelBuchenWahl.style.display = "";
+  };
+  deckelBestaetigungBuchenBtn.onclick = einmalig(deckelBestaetigungBuchenBtn, deckelBuchenAusfuehren);
+  deckelNeuBtn.onclick = einmalig(deckelNeuBtn, deckelNeuAnlegen);
+  deckelZurueckBtn.onclick = deckelDetailSchliessen;
+  deckelBezahlenBtn.onclick = einmalig(deckelBezahlenBtn, deckelZahlungOeffnen);
+  deckelZahlungAbbrechenBtn.onclick = deckelZahlungSchliessen;
+  deckelZahlungBestaetigenBtn.onclick = einmalig(deckelZahlungBestaetigenBtn, deckelZahlungBestaetigen);
+  deckelBuchenOverlay.addEventListener("click", (ev) => {
+    if (ev.target === deckelBuchenOverlay) deckelBuchenSchliessen();
+  });
+  deckelZahlungOverlay.addEventListener("click", (ev) => {
+    if (ev.target === deckelZahlungOverlay) deckelZahlungSchliessen();
+  });
   gegebenFeld.oninput = bezahlenGegebenGeaendert;
 
   ksGezaehltFeld.oninput = ksGezaehltGeaendert;

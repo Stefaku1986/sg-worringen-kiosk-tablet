@@ -644,6 +644,113 @@ textarea.betrag {
   margin-bottom: 0;
 }
 
+/* -------------------- Bierdeckel (Runde 59) -------------------- */
+/* Bernstein/Orange, damit "Auf Deckel" sich deutlich vom blauen "Bezahlen"
+   unterscheidet. Gleiche Spezifitaet wie button.btn-primaer (steht
+   weiter oben) - die spaetere Regel gewinnt. */
+button.btn-deckel {
+  background: #e08a00;
+  color: white;
+  border: none;
+}
+button.btn-deckel:active {
+  background: #b36b00;
+  color: white;
+}
+#bezahl-zeile {
+  display: flex;
+  gap: 10px;
+}
+#bezahl-zeile button {
+  flex: 1;
+}
+.deckel-kopfzeile {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+.deckel-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 12px;
+}
+.deckel-grid button {
+  background: #fff4e0;
+  color: var(--text-dunkel);
+  border: 2px solid #e08a00;
+  border-radius: 12px;
+  padding: 14px 8px;
+  min-height: 80px;
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.deckel-grid button:active {
+  background: #ffd99a;
+}
+.deckel-grid button.deckel-bezahlt {
+  background: #eceef2;
+  border-color: var(--grau-rand);
+  color: #777;
+}
+.deckel-grid button .deckel-kachel-betrag {
+  display: block;
+  font-size: 14px;
+  font-weight: 600;
+  margin-top: 4px;
+}
+.deckel-gross {
+  text-align: center;
+  font-size: 26px;
+  font-weight: 700;
+  margin: 8px 0;
+  color: var(--blau-dunkel);
+}
+.deckel-mittel {
+  text-align: center;
+  font-size: 18px;
+  font-weight: 600;
+  margin: 4px 0 10px 0;
+}
+.deckel-offen-gross {
+  font-size: 28px;
+  font-weight: 700;
+  color: #b36b00;
+  margin-bottom: 12px;
+}
+.deckel-arten {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 12px 0;
+}
+.deckel-art {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px;
+  border: 2px solid var(--grau-rand);
+  border-radius: 10px;
+  font-weight: 600;
+  cursor: pointer;
+}
+/* Viele Deckel: der Dialog scrollt statt ueber den Bildschirm zu ragen. */
+#deckel-buchen-overlay .modal,
+#deckel-zahlung-overlay .modal {
+  max-height: 92vh;
+  overflow-y: auto;
+}
+/* Mehrzeilige Hinweise (z.B. Liste "Offene Bierdeckel") */
+#hinweis-text {
+  white-space: pre-line;
+}
+.deckel-art input[type="radio"] {
+  width: 22px;
+  height: 22px;
+}
+
 /* Druckansicht (Bestand/Monatsabrechnung, siehe main.js druckenOeffnen()) -
    wird in einem eigenen Browser-Fenster/-Tab verwendet, nicht in dieser
    App selbst, daher hier als eigener, einfacher Block statt @media print. */

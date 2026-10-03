@@ -286,12 +286,26 @@ export async function lagerbewegungErfassen(
 // geaendert werden musste. Sie bucht bewusst KEINEN Warenausgang: das
 // Zurueckbringen einer leeren Flasche ist kein Lagerbestands-Ereignis fuer
 // das Getraenk, sondern eine reine Bargeld-Rueckzahlung.
-export async function kassiervorgangAbschliessen(veranstaltung, warenkorb, gegeben, benutzerName) {
+// Runde 59: optionaler Parameter deckelId = Buchung auf einen Bierdeckel
+// (anschreiben, spaeter bezahlen). Dann gegeben = rueckgeld = 0, keine
+// Pruefung "gegeben >= Summe"; Erloes/MwSt./Lager/Pfand zaehlen sofort,
+// das Kassensturz-Soll aber nicht (siehe kassensturzGesamtVorschau).
+export async function kassiervorgangAbschliessen(
+  veranstaltung,
+  warenkorb,
+  gegeben,
+  benutzerName,
+  deckelId = null
+) {
   if (!warenkorb.length) throw new Error("Warenkorb ist leer.");
   const gesamtbetrag = rund2(
     warenkorb.reduce((s, p) => s + p.menge * (p.einzelpreis + (p.pfandBetrag || 0)), 0)
   );
-  const rueckgeld = rund2(gegeben - gesamtbetrag);
+  if (deckelId) {
+    if (!(await get("deckel", deckelId))) throw new Error("Deckel nicht gefunden.");
+    gegeben = 0;
+  }
+  const rueckgeld = deckelId ? 0 : rund2(gegeben - gesamtbetrag);
   if (rueckgeld < 0) throw new Error("Gegebener Betrag ist kleiner als der Gesamtbetrag.");
 
   const vorgangId = neueId();
@@ -306,6 +320,7 @@ export async function kassiervorgangAbschliessen(veranstaltung, warenkorb, gegeb
     gegeben,
     rueckgeld,
     storno_von: null,
+    deckel_id: deckelId || null,
     rechner: GERAET_NAME,
     geraet_id: gid,
     synced: false,
@@ -338,7 +353,7 @@ export async function kassiervorgangAbschliessen(veranstaltung, warenkorb, gegeb
       position.produktId,
       "Warenausgang",
       -position.menge,
-      `Verkauf (${veranstaltung})`,
+      deckelId ? `Verkauf auf Deckel (${veranstaltung})` : `Verkauf (${veranstaltung})`,
       benutzerName,
       gid
     );
@@ -382,6 +397,7 @@ export async function vorgangStornieren(vorgangId, benutzerName, kommentar = nul
     gegeben: null,
     rueckgeld: null,
     storno_von: vorgangId,
+    deckel_id: vorgang.deckel_id || null,
     rechner: GERAET_NAME,
     geraet_id: gid,
     synced: false,
@@ -1078,7 +1094,8 @@ export async function kassensturzVorschau(veranstaltung) {
   const alleVorgaenge = await getAll("kassiervorgaenge");
   const einnahmen = rund2(
     alleVorgaenge
-      .filter((v) => v.veranstaltung === veranstaltung && v.datum > seit)
+      // Runde 59: Deckel-Buchungen sind kein Bargeld in der Kasse.
+      .filter((v) => v.veranstaltung === veranstaltung && v.datum > seit && !v.deckel_id)
       .reduce((s, v) => s + v.gesamtbetrag, 0)
   );
   const auszahlungen = await schiedsrichterAuszahlungenSumme(veranstaltung, seit);
@@ -1176,7 +1193,8 @@ export async function kassensturzGesamtVorschau() {
   for (const veranstaltung of VERANSTALTUNGEN) {
     const einnahmen = rund2(
       alleVorgaenge
-        .filter((v) => v.veranstaltung === veranstaltung && v.datum > seit)
+        // Runde 59: Vorgaenge auf Bierdeckel zaehlen nicht zu den Einnahmen.
+        .filter((v) => v.veranstaltung === veranstaltung && v.datum > seit && !v.deckel_id)
         .reduce((s, v) => s + v.gesamtbetrag, 0)
     );
     gesamtEinnahmen += einnahmen;
@@ -1192,10 +1210,15 @@ export async function kassensturzGesamtVorschau() {
   const gesamtEntnahmen = await bargeldEntnahmenAdhocSummeGesamt(seit);
   // Runde 58: Nachbestellungen werden bar aus der Kiosk-Kasse bezahlt.
   const gesamtNachbestellungen = await nachbestellungenBarSummeGesamt(seit);
+  // Runde 59: Bar-bezahlte Bierdeckel (inkl. Stornos) erhoehen das Soll;
+  // Ueberweisung/Ausbuchung nicht. offeneDeckel nur zur Info.
+  const gesamtDeckelZahlungen = await deckelZahlungenBarSumme(seit);
+  const offeneDeckel = await offeneDeckelGesamt();
 
   const soll = rund2(
     anfangsbestand +
-      gesamtEinnahmen -
+      gesamtEinnahmen +
+      gesamtDeckelZahlungen -
       gesamtAuszahlungen -
       gesamtSonstigeAusgaben +
       gesamtEinzahlungen -
@@ -1212,6 +1235,8 @@ export async function kassensturzGesamtVorschau() {
     einzahlungen: gesamtEinzahlungen,
     entnahmen: gesamtEntnahmen,
     nachbestellungen: gesamtNachbestellungen,
+    deckelZahlungen: gesamtDeckelZahlungen,
+    offeneDeckel,
     soll,
     sollNegativ: soll < 0,
     kassen,
@@ -2437,4 +2462,256 @@ async function summeMonat(zeilen, monatStr) {
     ergebnis[z.veranstaltung] = rund2(ergebnis[z.veranstaltung] + z.betrag);
   }
   return ergebnis;
+}
+
+// ---------------------------------------------------------------------
+// Bierdeckel (Runde 59): anschreiben lassen, spaeter bezahlen - Pendant zum
+// Abschnitt "Bierdeckel (Runde 59)" in kiosk/repository.py.
+//
+// Getraenke werden als normaler Kassiervorgang mit deckel_id gebucht
+// (kassiervorgangAbschliessen(..., deckelId)): Erloes, MwSt., Lager und
+// Pfand zaehlen sofort, das Kassensturz-Soll aber nicht. Erst eine
+// BAR-Zahlung (deckelZahlungErfassen, art='bar') erhoeht das Soll - fuer die
+// eine physische Kasse, ohne Aufteilung auf Jugend/Senioren
+// (veranstaltung = null). Ueberweisung und Ausbuchung senken nur den
+// offenen Betrag des Deckels, nicht das Soll.
+// ---------------------------------------------------------------------
+
+export const DECKEL_ZAHLUNGSARTEN = ["bar", "ueberweisung", "ausbuchung"];
+const DECKEL_NAMENSRAUM = "b7e1c2a4-5d3f-4e8a-9c61-2f0d4a7b8e19";
+const DECKEL_ART_TEXT = {
+  bar: "Bar bezahlt",
+  ueberweisung: "Überweisung",
+  ausbuchung: "Ausgebucht",
+};
+
+function deckelNameNormal(name) {
+  return String(name ?? "").trim().split(/\s+/).filter(Boolean).join(" ");
+}
+
+// UUIDv5 (RFC 4122, SHA-1) - identisch zu Python uuid.uuid5.
+async function uuidV5(namensraum, name) {
+  const nsBytes = Uint8Array.from(
+    namensraum.replace(/-/g, "").match(/../g).map((h) => parseInt(h, 16))
+  );
+  const nameBytes = new TextEncoder().encode(name);
+  const eingabe = new Uint8Array(nsBytes.length + nameBytes.length);
+  eingabe.set(nsBytes, 0);
+  eingabe.set(nameBytes, nsBytes.length);
+  const hash = new Uint8Array(await globalThis.crypto.subtle.digest("SHA-1", eingabe));
+  const b = hash.slice(0, 16);
+  b[6] = (b[6] & 0x0f) | 0x50;
+  b[8] = (b[8] & 0x3f) | 0x80;
+  const hex = Array.from(b, (x) => x.toString(16).padStart(2, "0")).join("");
+  return (
+    `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-` +
+    `${hex.slice(16, 20)}-${hex.slice(20, 32)}`
+  );
+}
+
+// Deterministische Deckel-ID aus dem Namen (Gross-/Kleinschreibung und
+// Leerzeichen egal). Python nutzt casefold(); toLowerCase() ist dazu fuer
+// deutsche Namen identisch - ausser bei "ß" (casefold -> "ss"), das hier
+// ausdruecklich gleich behandelt wird.
+export async function deckelIdFuerName(name) {
+  const norm = deckelNameNormal(name).toLowerCase().replace(/ß/g, "ss");
+  return uuidV5(DECKEL_NAMENSRAUM, norm);
+}
+
+export async function deckelAnlegen(name, benutzerName = null) {
+  const anzeige = deckelNameNormal(name);
+  if (!anzeige) throw new Error("Bitte einen Namen für den Deckel eingeben.");
+  const id = await deckelIdFuerName(anzeige);
+  if (await get("deckel", id)) return id;
+  await put("deckel", {
+    id,
+    datum: jetzt(),
+    name: anzeige,
+    rechner: GERAET_NAME,
+    geraet_id: await geraetId(),
+    synced: false,
+    synced_at: null,
+    benutzer: benutzerName,
+  });
+  return id;
+}
+
+function deckelOffenBerechnen(vorgaenge, zahlungen) {
+  const gebucht = vorgaenge.reduce((s, v) => s + v.gesamtbetrag, 0);
+  const bezahlt = zahlungen.reduce((s, z) => s + z.betrag, 0);
+  const offen = rund2(gebucht - bezahlt);
+  return Math.abs(offen) < 0.005 ? 0 : offen;
+}
+
+export async function deckelOffen(deckelId) {
+  const vorgaenge = (await getAll("kassiervorgaenge")).filter((v) => v.deckel_id === deckelId);
+  const zahlungen = (await getAll("deckel_zahlungen")).filter((z) => z.deckel_id === deckelId);
+  return deckelOffenBerechnen(vorgaenge, zahlungen);
+}
+
+// Alle Deckel mit offenem Betrag, offene zuerst, dann nach Name. Eintrag:
+// {id, name, datum, offen, gebucht, bezahlt, letzteBuchung}.
+export async function deckelUebersicht({ nurOffene = false } = {}) {
+  const alleDeckel = await getAll("deckel");
+  const alleVorgaenge = (await getAll("kassiervorgaenge")).filter((v) => v.deckel_id);
+  const alleZahlungen = await getAll("deckel_zahlungen");
+  const ergebnis = [];
+  for (const d of alleDeckel) {
+    const vorgaenge = alleVorgaenge.filter((v) => v.deckel_id === d.id);
+    const zahlungen = alleZahlungen.filter((z) => z.deckel_id === d.id);
+    const offen = deckelOffenBerechnen(vorgaenge, zahlungen);
+    if (nurOffene && offen === 0) continue;
+    const zeiten = [d.datum, ...vorgaenge.map((v) => v.datum), ...zahlungen.map((z) => z.datum)];
+    ergebnis.push({
+      id: d.id,
+      name: d.name,
+      datum: d.datum,
+      offen,
+      gebucht: rund2(vorgaenge.reduce((s, v) => s + v.gesamtbetrag, 0)),
+      bezahlt: rund2(zahlungen.reduce((s, z) => s + z.betrag, 0)),
+      letzteBuchung: zeiten.filter(Boolean).reduce((m, t) => (t > m ? t : m), ""),
+    });
+  }
+  ergebnis.sort((a, b) => {
+    const ga = a.offen === 0 ? 1 : 0;
+    const gb = b.offen === 0 ? 1 : 0;
+    if (ga !== gb) return ga - gb;
+    return a.name.toLowerCase().localeCompare(b.name.toLowerCase(), "de");
+  });
+  return ergebnis;
+}
+
+export async function offeneDeckelGesamt() {
+  const uebersicht = await deckelUebersicht();
+  return rund2(uebersicht.reduce((s, e) => s + e.offen, 0));
+}
+
+function formatBetragDe(x) {
+  return x.toFixed(2).replace(".", ",");
+}
+
+export async function deckelZahlungErfassen(
+  deckelId,
+  betrag,
+  art = "bar",
+  kommentar = null,
+  benutzerName = null
+) {
+  if (!DECKEL_ZAHLUNGSARTEN.includes(art)) throw new Error("Ungültige Zahlungsart.");
+  const b = rund2(Number(betrag));
+  if (!Number.isFinite(b) || b <= 0) throw new Error("Der Betrag muss größer als 0 sein.");
+  if (!(await get("deckel", deckelId))) throw new Error("Deckel nicht gefunden.");
+  const offen = await deckelOffen(deckelId);
+  if (b > offen + 0.005) {
+    throw new Error(`Auf dem Deckel sind nur ${formatBetragDe(Math.max(offen, 0))} € offen.`);
+  }
+  const id = neueId();
+  await put("deckel_zahlungen", {
+    id,
+    datum: jetzt(),
+    deckel_id: deckelId,
+    veranstaltung: null,
+    betrag: b,
+    art,
+    kommentar: kommentar || null,
+    storno_von: null,
+    rechner: GERAET_NAME,
+    geraet_id: await geraetId(),
+    synced: false,
+    synced_at: null,
+    benutzer: benutzerName,
+  });
+  return id;
+}
+
+export async function deckelZahlungIstStorniert(zahlungId) {
+  const alle = await getAll("deckel_zahlungen");
+  return alle.some((z) => z.storno_von === zahlungId);
+}
+
+// Gegenbuchung (negativer Betrag, gleiche art, storno_von). Storno vom
+// Storno und doppeltes Storno sind verboten.
+export async function deckelZahlungStornieren(zahlungId, benutzerName = null, kommentar = null) {
+  const z = await get("deckel_zahlungen", zahlungId);
+  if (!z) throw new Error("Zahlung nicht gefunden.");
+  if (z.storno_von) throw new Error("Ein Storno kann nicht erneut storniert werden.");
+  if (await deckelZahlungIstStorniert(zahlungId)) {
+    throw new Error("Diese Zahlung wurde bereits storniert.");
+  }
+  const id = neueId();
+  await put("deckel_zahlungen", {
+    id,
+    datum: jetzt(),
+    deckel_id: z.deckel_id,
+    veranstaltung: null,
+    betrag: rund2(-z.betrag),
+    art: z.art,
+    kommentar: kommentar || "Storno",
+    storno_von: zahlungId,
+    rechner: GERAET_NAME,
+    geraet_id: await geraetId(),
+    synced: false,
+    synced_at: null,
+    benutzer: benutzerName,
+  });
+  return id;
+}
+
+// Buchungen und Zahlungen eines Deckels, neueste zuerst. Eintrag: {typ
+// ('Buchung'|'Zahlung'), art, id, datum, veranstaltung, betrag, text,
+// storno_von, storniert, benutzer}.
+export async function deckelVerlauf(deckelId) {
+  const vorgaenge = (await getAll("kassiervorgaenge")).filter((v) => v.deckel_id === deckelId);
+  const positionen = await getAll("positionen");
+  const produkte = new Map((await getAll("produkte")).map((p) => [p.id, p.name]));
+  const stornierteVorgaenge = new Set(vorgaenge.filter((v) => v.storno_von).map((v) => v.storno_von));
+  const eintraege = [];
+  for (const v of vorgaenge) {
+    const text = positionen
+      .filter((p) => p.vorgang_id === v.id)
+      .map((p) => `${Math.abs(p.menge)}× ${produkte.get(p.produkt_id) ?? "?"}`)
+      .join(", ");
+    eintraege.push({
+      typ: "Buchung",
+      art: null,
+      id: v.id,
+      datum: v.datum,
+      veranstaltung: v.veranstaltung,
+      betrag: v.gesamtbetrag,
+      text: (v.storno_von ? "Storno: " : "") + text,
+      storno_von: v.storno_von ?? null,
+      storniert: stornierteVorgaenge.has(v.id),
+      benutzer: v.benutzer ?? null,
+    });
+  }
+  const zahlungen = (await getAll("deckel_zahlungen")).filter((z) => z.deckel_id === deckelId);
+  const stornierteZahlungen = new Set(zahlungen.filter((z) => z.storno_von).map((z) => z.storno_von));
+  for (const z of zahlungen) {
+    const basis = DECKEL_ART_TEXT[z.art] ?? "Zahlung";
+    let text = z.storno_von ? `Storno ${basis}` : basis;
+    if (z.kommentar && !z.storno_von) text += ` - ${z.kommentar}`;
+    eintraege.push({
+      typ: "Zahlung",
+      art: z.art,
+      id: z.id,
+      datum: z.datum,
+      veranstaltung: z.veranstaltung ?? null,
+      betrag: z.betrag,
+      text,
+      storno_von: z.storno_von ?? null,
+      storniert: stornierteZahlungen.has(z.id),
+      benutzer: z.benutzer ?? null,
+    });
+  }
+  eintraege.sort((a, b) => (a.datum < b.datum ? 1 : a.datum > b.datum ? -1 : 0));
+  return eintraege;
+}
+
+// Bar-Zahlungen auf Deckel (inkl. Stornos) seit dem Zeitpunkt - nur diese
+// landen im Kassensturz-Soll.
+async function deckelZahlungenBarSumme(seit) {
+  const alle = await getAll("deckel_zahlungen");
+  return rund2(
+    alle.filter((z) => z.art === "bar" && z.datum > seit).reduce((s, z) => s + z.betrag, 0)
+  );
 }

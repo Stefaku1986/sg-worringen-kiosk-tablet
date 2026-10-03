@@ -39,6 +39,10 @@ const NUR_LESEN_TABELLEN = ["trainingszeiten"];
 const SCHREIBBARE_TABELLEN = [
   "produkte",
   "benutzer",
+  // Runde 59: Bierdeckel - vor kassiervorgaenge (kassiervorgaenge.deckel_id
+  // verweist darauf); deckel_zahlungen verweist auf deckel.
+  "deckel",
+  "deckel_zahlungen",
   "kassiervorgaenge",
   "positionen",
   "lagerbewegungen",

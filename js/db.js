@@ -18,7 +18,9 @@ const DB_NAME = "sg-worringen-kiosk-tablet";
 // Versionsnummer als zuvor - deshalb muss diese Zahl bei jedem neuen Store
 // erhoeht werden, sonst bleiben bereits installierte Tablets bei den alten
 // Stores haengen.
-const DB_VERSION = 8;
+// Version 9 (Runde 59, Bierdeckel): neue Stores "deckel" und
+// "deckel_zahlungen" (Pendant zu den gleichnamigen Tabellen am Rechner).
+const DB_VERSION = 9;
 
 // Bewusst ohne zusaetzliche Indizes: bei den ueberschaubaren Datenmengen
 // eines Vereins-Kiosks ist ein einfaches getAll() + Filtern in JavaScript
@@ -46,6 +48,9 @@ const STORES = {
   // Runde 43: Pfand-Gewinn-Verbuchungen (siehe js/repo.js) - unveraender-
   // liches Ereignis mit Storno statt Aendern/Loeschen, wie oben.
   pfand_gewinn_verbuchungen: { keyPath: "id" },
+  // Runde 59: Bierdeckel (anschreiben, spaeter bezahlen).
+  deckel: { keyPath: "id" },
+  deckel_zahlungen: { keyPath: "id" },
   meta: { keyPath: "schluessel" },
 };
 
