@@ -1756,11 +1756,36 @@ async function renderStornoListe() {
 // Kassensturz
 // ---------------------------------------------------------------------
 
-async function renderKassensturz() {
+// Laeuft gerade ein Aufbau der Kassensturz-Ansicht? Verhindert, dass ein
+// Hintergrund-Neuaufbau mitten in einen laufenden Aufbau platzt (Runde 61).
+let kassensturzRenderLaeuft = false;
+
+// Baut die Kassensturz-Ansicht auf.
+//
+// Ohne Argument (Reiterwechsel, Kassenwechsel, nach dem Speichern) wird GENAU
+// EINMAL synchronisiert und das Eingabefeld geleert.
+//
+// Mit dem Ergebnis eines gerade gelaufenen Syncs (Hintergrund-Sync, siehe
+// nachSyncAktualisieren) wird NICHT erneut synchronisiert - sonst entstuende
+// die Endlosschleife Sync -> Neuaufbau -> Sync, die das Eingabefeld alle paar
+// Sekunden geleert hat (Runde 61) - und ein bereits eingetippter Betrag bleibt
+// stehen.
+async function renderKassensturz(syncErgebnisVorgegeben = null) {
+  const hintergrund = syncErgebnisVorgegeben !== null;
+  if (hintergrund && kassensturzRenderLaeuft) return;
+  kassensturzRenderLaeuft = true;
+  try {
+    await renderKassensturzIntern(syncErgebnisVorgegeben, hintergrund);
+  } finally {
+    kassensturzRenderLaeuft = false;
+  }
+}
+
+async function renderKassensturzIntern(syncErgebnisVorgegeben, hintergrund) {
   // Synchronisierung ist zwingend: Der Soll wird aus lokalen Daten berechnet.
   // Fehlen Buchungen von anderen Geräten, ist der Soll falsch und würde sich der Fehler
   // auf alle folgenden Kassenstürze übertragen.
-  const syncErgebnis = await syncJetzt();
+  const syncErgebnis = syncErgebnisVorgegeben ?? await syncJetzt();
 
   const sollNegativWarnung = el("ks-soll-negativ-warnung");
 
@@ -1772,6 +1797,11 @@ async function renderKassensturz() {
   );
 
   if (istVollausfall || pflichtTabelleFehlt) {
+    // Ein Hintergrund-Neuaufbau laesst die Anzeige unveraendert: er darf weder
+    // einen eingetippten Betrag loeschen noch unaufgefordert einen Dialog
+    // oeffnen. Die Sperre beim Oeffnen des Reiters bleibt davon unberuehrt.
+    if (hintergrund) return;
+
     // Sperren: Feld und Button müssen deaktiviert werden
     ksGezaehltFeld.disabled = true;
     ksSpeichernBtn.disabled = true;
@@ -1840,8 +1870,14 @@ async function renderKassensturz() {
 
   sollNegativWarnung.style.display = vorschau.sollNegativ ? "" : "none";
 
-  ksGezaehltFeld.value = "";
-  ksDifferenz.textContent = "";
+  if (hintergrund) {
+    // Eingetippten Betrag stehen lassen und die Differenz gegen den
+    // moeglicherweise neuen Soll nachrechnen.
+    ksGezaehltGeaendert();
+  } else {
+    ksGezaehltFeld.value = "";
+    ksDifferenz.textContent = "";
+  }
 
   await renderKassensturzHistorie();
 }
@@ -3878,7 +3914,7 @@ async function ladeCaches() {
   produkteCache = await repo.listeProdukte();
 }
 
-async function nachSyncAktualisieren() {
+async function nachSyncAktualisieren(syncErgebnis = null) {
   await ladeCaches();
   if (aktuelleAnsicht === "login") {
     renderLoginNutzer();
@@ -3889,7 +3925,9 @@ async function nachSyncAktualisieren() {
   } else if (aktuelleAnsicht === "storno") {
     renderStornoListe();
   } else if (aktuelleAnsicht === "kassensturz") {
-    renderKassensturz();
+    // Ergebnis mitgeben: der Sync ist gerade gelaufen, ein zweiter waere die
+    // Endlosschleife aus Runde 61.
+    renderKassensturz(syncErgebnis);
   } else if (aktuelleAnsicht === "schiedsrichter") {
     renderSchiedsrichter();
   } else if (aktuelleAnsicht === "einzahlen") {
@@ -3925,7 +3963,7 @@ onSynchronisiert((ergebnis) => {
     statusText += ` ⚠ ${ergebnis.fehlgeschlageneTabellen.length} Tabellen fehlgeschlagen: ${tabellen}`;
   }
   syncStatusEl.textContent = statusText;
-  nachSyncAktualisieren();
+  nachSyncAktualisieren(ergebnis);
 });
 
 async function syncManuellAusloesen() {
