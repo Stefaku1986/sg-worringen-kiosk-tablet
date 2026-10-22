@@ -210,6 +210,12 @@ const beKasseName = el("be-kasse-name");
 const beBetragFeld = el("be-betrag-feld");
 const beEmpfaengerFeld = el("be-empfaenger-feld");
 const beKommentarFeld = el("be-kommentar-feld");
+// Runde 62: Einkauf mit Kassenbon
+const beEinkaufCheckbox = el("be-einkauf-checkbox");
+const beEinkaufFelder = el("be-einkauf-felder");
+const beHaendlerFeld = el("be-haendler-feld");
+const beBonNrFeld = el("be-bon-nr-feld");
+const beKaufdatumFeld = el("be-kaufdatum-feld");
 const beFehler = el("be-fehler");
 const beErfassenBtn = el("be-erfassen-btn");
 const beTabelleBody = document.querySelector("#be-tabelle tbody");
@@ -224,14 +230,8 @@ const ksEntnahmeSpeichernBtn = el("ks-entnahme-speichern-btn");
 
 const npProduktAuswahl = el("np-produkt-auswahl");
 const npProduktMengeFeld = el("np-produkt-menge-feld");
-const npProduktPreisFeld = el("np-produkt-preis-feld");
-const npProduktPreisartAuswahl = el("np-produkt-preisart-auswahl");
-const npProduktPfandBezahltFeld = el("np-produkt-pfand-bezahlt-feld");
-const npProduktPfandErhaltenFeld = el("np-produkt-pfand-erhalten-feld");
 const npPositionHinzufuegenBtn = el("np-position-hinzufuegen-btn");
 const npPositionenListe = el("np-positionen-liste");
-const npBezahltFeld = el("np-bezahlt-feld");
-const npErhaltenFeld = el("np-erhalten-feld");
 const npKommentarFeld = el("np-kommentar-feld");
 const npFehler = el("np-fehler");
 const npErfassenBtn = el("np-erfassen-btn");
@@ -2335,6 +2335,10 @@ async function renderEntnahmen() {
   const aktiveKasse = session.getAktiveKasse();
   beKasseName.textContent = KASSE_LABEL[aktiveKasse] ?? aktiveKasse;
   beFehler.textContent = "";
+  const heute = heuteIso();
+  beKaufdatumFeld.max = heute;
+  if (!beKaufdatumFeld.value) beKaufdatumFeld.value = heute;
+  entnahmeEinkaufUmschalten();
 
   const alle = await repo.letzteBargeldEntnahmen(500);
   const stornierteIds = new Set(alle.filter((e) => e.storno_von).map((e) => e.storno_von));
@@ -2351,10 +2355,19 @@ async function renderEntnahmen() {
     let empfaengerAnzeige = entnahme.empfaenger || "–";
     if (entnahme.kassensturz_id) empfaengerAnzeige += " (aus Kassensturz)";
 
+    // Runde 62: Kassenbon eines Einkaufs (Haendler · Bon · Kaufdatum)
+    let bonAnzeige = "–";
+    if (entnahme.bon_nr) {
+      const kd = entnahme.kaufdatum || "";
+      const kdAnzeige = kd.length === 10 ? `${kd.slice(8, 10)}.${kd.slice(5, 7)}.${kd.slice(0, 4)}` : kd;
+      bonAnzeige = `${entnahme.haendler || ""} · Bon ${entnahme.bon_nr} · ${kdAnzeige}`;
+    }
+
     const zellen = [
       formatDatumUhrzeit(entnahme.datum),
       empfaengerAnzeige,
       euro(entnahme.betrag, true),
+      bonAnzeige,
       status,
     ];
     for (const wert of zellen) {
@@ -2399,13 +2412,22 @@ async function entnahmeErfassen() {
     return;
   }
   const benutzer = session.getAktuellerBenutzer();
+  const einkauf = beEinkaufCheckbox.checked
+    ? {
+        haendler: beHaendlerFeld.value,
+        bonNr: beBonNrFeld.value,
+        kaufdatum: beKaufdatumFeld.value,
+      }
+    : null;
   try {
     await repo.bargeldEntnahmeErfassen(
       session.getAktiveKasse(),
       betrag,
       beEmpfaengerFeld.value.trim(),
       beKommentarFeld.value.trim(),
-      benutzer.name
+      benutzer.name,
+      null,
+      einkauf
     );
   } catch (exc) {
     beFehler.textContent = exc.message ?? String(exc);
@@ -2414,8 +2436,25 @@ async function entnahmeErfassen() {
   beBetragFeld.value = "";
   beEmpfaengerFeld.value = "";
   beKommentarFeld.value = "";
+  beHaendlerFeld.value = "";
+  beBonNrFeld.value = "";
+  beKaufdatumFeld.value = heuteIso();
+  beEinkaufCheckbox.checked = true;
   beFehler.textContent = "";
   renderEntnahmen();
+}
+
+// Runde 62: Haendler/Bonnummer/Kaufdatum nur bei "Einkauf mit Kassenbon".
+function entnahmeEinkaufUmschalten() {
+  beEinkaufFelder.style.display = beEinkaufCheckbox.checked ? "" : "none";
+}
+
+// Heutiges Datum als YYYY-MM-DD in Ortszeit (fuer <input type="date">).
+function heuteIso() {
+  const d = new Date();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const tt = String(d.getDate()).padStart(2, "0");
+  return `${d.getFullYear()}-${mm}-${tt}`;
 }
 
 // ---------------------------------------------------------------------
@@ -2447,21 +2486,9 @@ function renderNachbestellungPositionenListe() {
     const div = document.createElement("div");
     div.className = "warenkorb-zeile";
 
-    const pfandTeile = [];
-    if (position.pfandBezahlt) {
-      pfandTeile.push(`${euro(position.pfandBezahlt * position.menge)} Pfand bezahlt`);
-    }
-    if (position.pfandErhalten) {
-      pfandTeile.push(`${euro(position.pfandErhalten * position.menge)} Pfand zurückerhalten`);
-    }
     const name = document.createElement("div");
     name.className = "name";
-    name.textContent =
-      `${position.name} × ${position.menge}` +
-      (position.einzelpreis != null
-        ? ` (${euro(position.preisBrutto)}/Stück = ${euro(position.preisBrutto * position.menge)})`
-        : "") +
-      (pfandTeile.length ? ` (${pfandTeile.join(", ")})` : "");
+    name.textContent = `${position.name} × ${position.menge}`;
     div.appendChild(name);
 
     const entfernenBtn = document.createElement("button");
@@ -2476,80 +2503,26 @@ function renderNachbestellungPositionenListe() {
 
     npPositionenListe.appendChild(div);
   }
-
-  // Runde 45: Gesamtsumme als Kontrollzeile - macht einen als "pro Stück"
-  // eingetippten Rechnungsbetrag sofort sichtbar, statt ihn erst Wochen
-  // spaeter in der Auswertung auffallen zu lassen.
-  if (nachbestellungPositionen.length) {
-    const summe = nachbestellungPositionen.reduce(
-      (s, p) => s + (p.preisBrutto || 0) * p.menge,
-      0
-    );
-    const summeZeile = document.createElement("p");
-    summeZeile.className = "hinweis";
-    summeZeile.innerHTML = `<b>Warenwert gesamt: ${euro(summe)}</b> (inkl. MwSt., ohne Pfand)`;
-    npPositionenListe.appendChild(summeZeile);
-  }
-  aktualisiereNachbestellungKassenbetrag();
 }
 
-// Runde 58: was beim Kassensturz vom Soll abgezogen wird - Warenwert brutto
-// (je Position auf den Cent gerundet, wie repo.nachbestellungBarbetrag)
-// plus Pfand bezahlt minus Pfand zurueckerhalten.
-function aktualisiereNachbestellungKassenbetrag() {
-  const alt = document.getElementById("np-kassenbetrag");
-  if (alt) alt.remove();
-  let betrag = (betragLesen(npBezahltFeld) || 0) - (betragLesen(npErhaltenFeld) || 0);
-  for (const p of nachbestellungPositionen) {
-    if (p.einzelpreis != null) {
-      betrag += rund2(p.menge * p.einzelpreis * (1 + (p.mwstSatz || 0) / 100));
-    }
-    betrag += ((p.pfandBezahlt || 0) - (p.pfandErhalten || 0)) * p.menge;
-  }
-  if (!nachbestellungPositionen.length && !betrag) return;
-  const zeile = document.createElement("p");
-  zeile.id = "np-kassenbetrag";
-  zeile.className = "hinweis";
-  zeile.innerHTML = `<b>Aus der Kiosk-Kasse bezahlt: ${euro(rund2(betrag))}</b>`;
-  npPositionenListe.appendChild(zeile);
-}
-
+// Runde 62: Nachbestellungen buchen nur noch Mengen - Preise und Pfand
+// werden nicht mehr erfasst (Pendant zu NachbestellungDialog in der
+// Windows-App). Bezahlt wird ueber eine Entnahme mit Kassenbon.
 function nachbestellungPositionHinzufuegen() {
   const produktId = npProduktAuswahl.value;
   const produkt = produkteCache.find((p) => p.id === produktId);
   if (!produkt) return;
   const menge = Math.max(1, Math.round(betragLesen(npProduktMengeFeld) || 1));
-  // Runde 45: der eingegebene Betrag kann laut Auswahl entweder pro Stueck
-  // oder fuer die gesamte Position gemeint sein - gespeichert wird immer
-  // der Preis pro Stueck. Ohne diese Umschaltung wurde ein eingetippter
-  // Rechnungsbetrag mit der Menge multipliziert (120 Flaschen x 90,34 € =
-  // 10.840,80 € statt 107,50 €).
-  const eingabeBetrag = betragLesen(npProduktPreisFeld) || 0;
-  const preisBrutto =
-    npProduktPreisartAuswahl.value === "gesamt" && eingabeBetrag > 0
-      ? eingabeBetrag / menge
-      : eingabeBetrag;
-  const einzelpreis = preisBrutto > 0 ? nettoPreisGenau(preisBrutto, produkt.mwst_satz) : null;
-  const mwstSatz = preisBrutto > 0 ? produkt.mwst_satz : null;
-  // Pfand pro Stueck (Runde 32) - wie beim Preis wird nur der Wert pro
-  // Stueck gespeichert, die Hochrechnung mit der Menge passiert erst beim
-  // Anzeigen bzw. beim Speichern (siehe nachbestellungErfassen).
-  const pfandBezahlt = betragLesen(npProduktPfandBezahltFeld) || 0;
-  const pfandErhalten = betragLesen(npProduktPfandErhaltenFeld) || 0;
   nachbestellungPositionen.push({
     produktId,
     name: produkt.name,
     menge,
-    einzelpreis,
-    mwstSatz,
-    preisBrutto,
-    pfandBezahlt: pfandBezahlt || null,
-    pfandErhalten: pfandErhalten || null,
+    einzelpreis: null,
+    mwstSatz: null,
+    pfandBezahlt: null,
+    pfandErhalten: null,
   });
   npProduktMengeFeld.value = "1";
-  npProduktPreisFeld.value = "";
-  npProduktPfandBezahltFeld.value = "";
-  npProduktPfandErhaltenFeld.value = "";
   renderNachbestellungPositionenListe();
 }
 
@@ -2644,40 +2617,35 @@ async function renderNachbestellungen() {
 }
 
 async function nachbestellungErfassen() {
-  // bezahlt/erhalten = "Sonstiges Pfand" (ohne Produktbezug) PLUS die Summe
-  // des Pfands aller Produkt-Positionen (Pfand/Stück * Menge) - der an
-  // repo.lieferantenPfandErfassen uebergebene Gesamtbetrag bleibt dadurch
-  // vollstaendig, unabhaengig davon, ob das Pfand pro Produkt oder als ein
-  // Gesamtbetrag erfasst wurde (Runde 32, analog zur Windows-App).
-  let bezahlt = betragLesen(npBezahltFeld) || 0;
-  let erhalten = betragLesen(npErhaltenFeld) || 0;
-  for (const p of nachbestellungPositionen) {
-    bezahlt += (p.pfandBezahlt || 0) * p.menge;
-    erhalten += (p.pfandErhalten || 0) * p.menge;
+  // Runde 62: nur Mengen - kein Preis, kein Pfand (siehe
+  // nachbestellungPositionHinzufuegen).
+  if (!nachbestellungPositionen.length) {
+    npFehler.textContent = "Bitte mindestens ein Produkt mit Menge hinzufügen.";
+    return;
   }
   const benutzer = session.getAktuellerBenutzer();
   const positionen = nachbestellungPositionen.map((p) => ({
     produktId: p.produktId,
     menge: p.menge,
-    einzelpreis: p.einzelpreis,
-    mwstSatz: p.mwstSatz,
-    pfandBezahlt: p.pfandBezahlt,
-    pfandErhalten: p.pfandErhalten,
+    einzelpreis: null,
+    mwstSatz: null,
+    pfandBezahlt: null,
+    pfandErhalten: null,
   }));
   try {
     if (nachbestellungKorrekturId) {
       await repo.nachbestellungKorrigieren(
         nachbestellungKorrekturId,
-        bezahlt,
-        erhalten,
+        0,
+        0,
         npKommentarFeld.value.trim(),
         benutzer.name,
         positionen
       );
     } else {
       await repo.lieferantenPfandErfassen(
-        bezahlt,
-        erhalten,
+        0,
+        0,
         npKommentarFeld.value.trim(),
         benutzer.name,
         positionen
@@ -2692,8 +2660,6 @@ async function nachbestellungErfassen() {
 }
 
 function nachbestellungFormularLeeren() {
-  npBezahltFeld.value = "";
-  npErhaltenFeld.value = "";
   npKommentarFeld.value = "";
   npFehler.textContent = "";
   nachbestellungPositionen = [];
@@ -2706,16 +2672,33 @@ function nachbestellungFormularLeeren() {
 
 // Runde 58: Nachbestellung "bearbeiten" - laedt sie ins Formular oben. Beim
 // Speichern wird die alte Buchung storniert und die korrigierte neu erfasst
-// (repo.nachbestellungKorrigieren).
+// (repo.nachbestellungKorrigieren). Runde 62: Nachbestellungen aus dem alten
+// Verfahren (mit Preis/Pfand, bar aus der Kasse bezahlt) lassen sich nicht
+// mehr korrigieren - der Barbetrag wuerde sonst still auf 0 fallen.
 async function nachbestellungKorrekturStarten(eintrag) {
+  if (await repo.nachbestellungBarbetrag(eintrag.id)) {
+    zeigeHinweis(
+      "Korrektur nicht möglich",
+      "Diese Nachbestellung stammt noch aus dem alten Verfahren mit Preisen/Pfand. " +
+        "Falls sie falsch ist, bitte stornieren, nur die Mengen neu erfassen und das " +
+        "bezahlte Geld als Entnahme mit Kassenbon buchen."
+    );
+    return;
+  }
   const vorlage = await repo.nachbestellungKorrekturVorlage(eintrag.id);
   nachbestellungKorrekturId = eintrag.id;
   nachbestellungPositionen = vorlage.positionen.map((p) => {
     const produkt = produkteCache.find((pr) => pr.id === p.produktId);
-    return { ...p, name: produkt ? produkt.name : "?" };
+    return {
+      produktId: p.produktId,
+      menge: p.menge,
+      einzelpreis: null,
+      mwstSatz: null,
+      pfandBezahlt: null,
+      pfandErhalten: null,
+      name: produkt ? produkt.name : "?",
+    };
   });
-  npBezahltFeld.value = vorlage.sonstigesBezahlt ? deZahl(vorlage.sonstigesBezahlt) : "";
-  npErhaltenFeld.value = vorlage.sonstigesErhalten ? deZahl(vorlage.sonstigesErhalten) : "";
   npKommentarFeld.value = vorlage.kommentar;
   npFehler.textContent = "";
   npTitel.textContent = "Nachbestellung korrigieren";
@@ -3036,13 +3019,17 @@ function wwModusUmschalten(modus) {
   wwMengeLabel.innerHTML = modus === "Wareneingang"
     ? "<b>Menge (Stück, z.B. 24 für einen Kasten):</b>"
     : "<b>Menge (positiv = Bestand erhöhen, negativ = senken):</b>";
-  const zeigePreisfelder = modus === "Wareneingang";
+  // Runde 62: Einkaufspreise werden nicht mehr im Kassensystem erfasst
+  // (Pflege beim Monatsabschluss) - Preisfelder sind immer ausgeblendet,
+  // das Beleg-Foto bleibt beim Wareneingang moeglich.
+  const zeigePreisfelder = false;
+  const zeigeBeleg = modus === "Wareneingang";
   wwEinzelpreisLabel.style.display = zeigePreisfelder ? "" : "none";
   wwEinzelpreisFeld.style.display = zeigePreisfelder ? "" : "none";
   wwMwstLabel.style.display = zeigePreisfelder ? "" : "none";
   wwMwstAuswahl.style.display = zeigePreisfelder ? "" : "none";
-  wwBelegLabel.style.display = zeigePreisfelder ? "" : "none";
-  wwBelegFeld.style.display = zeigePreisfelder ? "" : "none";
+  wwBelegLabel.style.display = zeigeBeleg ? "" : "none";
+  wwBelegFeld.style.display = zeigeBeleg ? "" : "none";
 }
 
 async function renderWarenwirtschaft() {
@@ -3173,10 +3160,9 @@ async function wareneingangErfassen() {
     wwFehler.textContent = "Beim Wareneingang muss die Menge größer als 0 sein.";
     return;
   }
-  const einzelpreisWert = wwEinzelpreisFeld.value.trim();
-  const einzelpreis = wwModus === "Wareneingang" && einzelpreisWert !== "" ? betragLesen(wwEinzelpreisFeld) : null;
-  const mwstWert = wwMwstAuswahl.value;
-  const mwstSatz = wwModus === "Wareneingang" && mwstWert !== "" ? parseFloat(mwstWert) : null;
+  // Runde 62: kein Preis mehr beim Wareneingang (siehe wwModusUmschalten).
+  const einzelpreis = null;
+  const mwstSatz = null;
 
   let belegPfad = null;
   const belegDatei = wwModus === "Wareneingang" ? wwBelegFeld.files[0] : null;
@@ -3331,6 +3317,7 @@ async function renderAuswertung() {
       <div class="kennzahl-zeile"><span>MwSt. 7 %</span><span>${euro(k.mwst_7)}</span></div>
       <div class="kennzahl-zeile"><span>MwSt. 19 %</span><span>${euro(k.mwst_19)}</span></div>
       <div class="kennzahl-zeile"><span>Offenes Pfand</span><span>${euro(k.pfand)}</span></div>
+      <div class="kennzahl-zeile"><span>Allgemeine Ausgaben (50 % Anteil)</span><span>${euro(-(k.sonstige_ausgaben_anteil || 0))}</span></div>
       <div class="kennzahl-zeile gesamt"><span>Gewinn</span><span>${euro(k.gewinn)}</span></div>
       <div class="kennzahl-zeile" title="Einkaufswert der tatsächlich verkauften Ware (verkaufte Menge × tatsächlich gezahltem Einkaufspreis pro Stück). Ist bereits im Gewinn oben abgezogen. Noch nicht verkaufte Ware zählt hier nicht mit."><span>Wareneinsatz (verkaufte Ware)</span><span>${euro(k.wareneinsatz)}</span></div>
     `;
@@ -3505,6 +3492,18 @@ function monatsabrechnungHtml(m) {
       if (!w) continue;
       jeKasseZeilen += `<tr><td>${v} · ${anzeige}</td>${werteZellen(w)}</tr>`;
     }
+    // Runde 61: Die allgemeinen Ausgaben stecken im Gewinn der Kasse, aber
+    // nicht in den Warengruppen-Zeilen. Ohne diese Zwischenzeile wuerde die
+    // Summenzeile fuer den Leser nicht mehr aufgehen.
+    const anteil = m.je_kasse[v].sonstige_ausgaben_anteil || 0;
+    if (anteil) {
+      jeKasseZeilen +=
+        `<tr><td>${v} · allgemeine Ausgaben (50 %)</td>` +
+        `<td style="text-align:right">–</td><td style="text-align:right">–</td>` +
+        `<td style="text-align:right">–</td><td style="text-align:right">–</td>` +
+        `<td style="text-align:right">${euro(-anteil)}</td>` +
+        `<td style="text-align:right">–</td></tr>`;
+    }
     jeKasseZeilen += `<tr class="summe"><td><b>${label} gesamt</b></td>${werteZellen(m.je_kasse[v])}</tr>`;
   }
 
@@ -3526,7 +3525,7 @@ function monatsabrechnungHtml(m) {
   return `
     <h2>Je Kasse und Warengruppe</h2>
     <table><thead><tr><th>Kasse</th><th>Erlös</th><th>MwSt. 7%</th><th>MwSt. 19%</th><th>Wareneinsatz</th><th>Gewinn</th><th>Pfand</th></tr></thead><tbody>${jeKasseZeilen}</tbody></table>
-    <p class="hinweis">„Wareneinsatz“ ist der Einkaufswert der in diesem Monat tatsächlich verkauften Stücke und im Gewinn bereits abgezogen – nicht der gesamte Wareneinkauf des Monats. Pfand ist eine Kaution, kein Erlös, und fließt nicht in den Gewinn ein.</p>
+    <p class="hinweis">„Wareneinsatz“ ist der Einkaufswert der in diesem Monat tatsächlich verkauften Stücke und im Gewinn bereits abgezogen – nicht der gesamte Wareneinkauf des Monats. Pfand ist eine Kaution, kein Erlös, und fließt nicht in den Gewinn ein. Die allgemeinen Ausgaben werden je zur Hälfte auf beide Kassen verteilt – unabhängig davon, auf welcher Kasse sie erfasst wurden – und sind im Gewinn der Kasse bereits abgezogen. Schiedsrichter-Auszahlungen sind es nicht.</p>
 
     <h2>Wareneinkauf des Monats (Summe)</h2>
     ${m.wareneinkauf_teilweise_geschaetzt ? '<p class="hinweis">Für einzelne Wareneingänge wurde kein Preis erfasst – dort wurde der am Produkt hinterlegte Einkaufspreis geschätzt.</p>' : ""}
@@ -3539,11 +3538,11 @@ function monatsabrechnungHtml(m) {
 
     <h2>Zusammenfassung</h2>
     <div class="kennzahl-zeile"><span>Gesamterlös (brutto)</span><span>${euro(m.gesamt_erloes)}</span></div>
-    <div class="kennzahl-zeile"><span>Gesamtgewinn (nach Wareneinsatz)</span><span>${euro(m.gesamt_gewinn)}</span></div>
+    <div class="kennzahl-zeile"><span>Gesamtgewinn (nach Wareneinsatz und allgemeinen Ausgaben)</span><span>${euro(m.gesamt_gewinn)}</span></div>
+    <div class="kennzahl-zeile"><span>darin bereits abgezogen: allgemeine Ausgaben</span><span>${euro(m.gesamt_sonstige_ausgaben)}</span></div>
     <div class="kennzahl-zeile"><span>Pfand insgesamt (kein Erlös)</span><span>${euro(m.gesamt_pfand)}</span></div>
     ${kategorieKennzahlen}
     <div class="kennzahl-zeile"><span>Schiedsrichter-Auszahlungen</span><span>${euro(m.gesamt_schiedsrichter)}</span></div>
-    <div class="kennzahl-zeile"><span>Sonstige Ausgaben</span><span>${euro(m.gesamt_sonstige_ausgaben)}</span></div>
     <div class="kennzahl-zeile gesamt"><span>Ergebnis nach Ausgaben</span><span>${euro(m.gesamt_ergebnis_nach_ausgaben)}</span></div>
     <div class="kennzahl-zeile"><span>Wareneinsatz verkaufter Ware</span><span>${euro(m.gesamt_wareneinsatz)}</span></div>
     <div class="kennzahl-zeile"><span>Umsatzsteuer</span><span>${euro(m.gesamt_umsatzsteuer)}</span></div>
@@ -4116,8 +4115,7 @@ function wireEvents() {
     nachbestellungFormularLeeren();
     renderNachbestellungPositionenListe();
   };
-  npBezahltFeld.addEventListener("input", aktualisiereNachbestellungKassenbetrag);
-  npErhaltenFeld.addEventListener("input", aktualisiereNachbestellungKassenbetrag);
+  beEinkaufCheckbox.addEventListener("change", entnahmeEinkaufUmschalten);
   tsEintragenBtn.onclick = einmalig(tsEintragenBtn, heimspielEintragen);
   fbEinreichenBtn.onclick = einmalig(fbEinreichenBtn, feedbackEinreichen);
   fbsAbbrechenBtn.onclick = feedbackStatusSchliessen;

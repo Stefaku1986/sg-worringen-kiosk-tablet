@@ -327,6 +327,20 @@
           <input type="text" inputmode="decimal" class="betrag" id="be-betrag-feld" />
           <label><b>Empfänger:</b></label>
           <input type="text" class="betrag" id="be-empfaenger-feld" placeholder="z.B. Herr Müller, Vereinskasse" />
+          <!-- Runde 62: Einkaeufe nur noch ueber eine Entnahme mit Kassenbon -->
+          <label style="display:flex; align-items:center; gap:8px; margin:8px 0;">
+            <input type="checkbox" id="be-einkauf-checkbox" checked style="width:22px; height:22px;" />
+            <b>Einkauf mit Kassenbon</b>
+          </label>
+          <div id="be-einkauf-felder">
+            <label><b>Händler:</b></label>
+            <input type="text" class="betrag" id="be-haendler-feld" placeholder="z.B. HIT Dormagen, trinkgut, Selgros" />
+            <label><b>Bonnummer:</b></label>
+            <input type="text" class="betrag" id="be-bon-nr-feld" placeholder="Belegnummer vom Kassenbon" />
+            <label><b>Kaufdatum:</b></label>
+            <input type="date" class="betrag" id="be-kaufdatum-feld" />
+            <p class="hinweis">Den Kassenbon bitte aufheben – er wird zu Hause in die Handkasse gebucht.</p>
+          </div>
           <label><b>Kommentar (optional):</b></label>
           <input type="text" class="betrag" id="be-kommentar-feld" />
           <div id="be-fehler" class="pin-fehler"></div>
@@ -337,7 +351,7 @@
           <h2 style="margin-top:0; color:var(--blau-dunkel);">Letzte Entnahmen</h2>
           <table class="liste" id="be-tabelle">
             <thead>
-              <tr><th>Datum</th><th>Empfänger</th><th>Betrag</th><th>Status</th><th></th></tr>
+              <tr><th>Datum</th><th>Empfänger</th><th>Betrag</th><th>Kassenbon</th><th>Status</th><th></th></tr>
             </thead>
             <tbody></tbody>
           </table>
@@ -351,16 +365,10 @@
           <div id="np-korrektur-hinweis" class="warnung" style="display:none; margin-bottom:10px;"></div>
           <p class="hinweis">
             Nachbestellte Produkte (Getränke und Speisen) mit Menge eintragen – bucht
-            automatisch einen Wareneingang, der Bestand aktualisiert sich direkt. Preis und
-            Pfand pro Stück sind jeweils optional. Beim Preis lässt sich umstellen, ob der
-            Betrag <b>pro Stück</b> oder für die <b>gesamte Position</b> gilt (z.B. der
-            Rechnungsbetrag einer Kiste) – die Vorschau unter der Liste zeigt, was gebucht
-            wird. Die beiden Felder "Sonstiges Pfand" unten
-            sind für Pfand ohne Bezug zu einer bestimmten Position (z.B. lose Kisten-Rückgabe
-            beim Händler) – getrennt vom Kunden-Pfand am Kiosk.
-            Bezahlt wird bar aus der Kiosk-Kasse: Warenwert plus Pfand-Saldo wird beim
-            nächsten Kassensturz automatisch vom Soll abgezogen – dafür also
-            <b>keine</b> zusätzliche Bargeld-Entnahme buchen.
+            automatisch einen Wareneingang, der Bestand aktualisiert sich direkt. Preise und
+            Pfand werden hier nicht mehr erfasst: Das Geld für den Einkauf bitte unter
+            <b>Entnahmen</b> als „Einkauf mit Kassenbon“ (Händler, Bonnummer, Kaufdatum)
+            buchen und den Kassenbon aufheben.
           </p>
 
           <label><b>Produkt hinzufügen:</b></label>
@@ -369,28 +377,10 @@
             <input type="text" inputmode="numeric" class="betrag"
                    id="np-produkt-menge-feld" placeholder="Menge" value="1"
                    style="flex:1; margin:0; min-width:70px;" />
-            <input type="text" inputmode="decimal" class="betrag"
-                   id="np-produkt-preis-feld" placeholder="Preis € (optional)"
-                   style="flex:2; margin:0; min-width:110px;" />
-            <select class="betrag" id="np-produkt-preisart-auswahl"
-                    style="flex:2; margin:0; min-width:130px;">
-              <option value="stueck">Preis pro Stück</option>
-              <option value="gesamt">Preis gesamte Position</option>
-            </select>
-            <input type="text" inputmode="decimal" class="betrag"
-                   id="np-produkt-pfand-bezahlt-feld" placeholder="Pfand/Stück bezahlt € (optional)"
-                   style="flex:2; margin:0; min-width:110px;" />
-            <input type="text" inputmode="decimal" class="betrag"
-                   id="np-produkt-pfand-erhalten-feld" placeholder="Pfand/Stück erhalten € (optional)"
-                   style="flex:2; margin:0; min-width:110px;" />
             <button type="button" class="btn" id="np-position-hinzufuegen-btn">+</button>
           </div>
           <div id="np-positionen-liste" style="margin-bottom:10px;"></div>
 
-          <label><b>Sonstiges Pfand bezahlt (ohne Produktbezug):</b></label>
-          <input type="text" inputmode="decimal" class="betrag" id="np-bezahlt-feld" />
-          <label><b>Sonstiges Pfand zurückerhalten (ohne Produktbezug):</b></label>
-          <input type="text" inputmode="decimal" class="betrag" id="np-erhalten-feld" />
           <label><b>Kommentar (optional):</b></label>
           <input type="text" class="betrag" id="np-kommentar-feld" placeholder="z.B. Lieferant/Anlass" />
           <div id="np-fehler" class="pin-fehler"></div>
@@ -648,8 +638,9 @@
               <option value="7">7 %</option>
               <option value="19">19 %</option>
             </select>
-            <label><b>Einkaufspreis:</b></label>
-            <input type="text" inputmode="decimal" class="betrag" id="ad-p-einkauf-feld" />
+            <label><b>Einkaufspreis (nur Anzeige):</b></label>
+            <input type="text" inputmode="decimal" class="betrag" id="ad-p-einkauf-feld" readonly disabled
+                   placeholder="wird beim Monatsabschluss aus den Kassenbons gepflegt" />
             <label><b>Verkaufspreis:</b></label>
             <input type="text" inputmode="decimal" class="betrag" id="ad-p-verkauf-feld" />
             <label><b>Helferpreis (optional, sonst = Verkaufspreis):</b></label>
@@ -1014,8 +1005,8 @@
         <option value="7">7 %</option>
         <option value="19">19 %</option>
       </select>
-      <label><b>Einkaufspreis:</b></label>
-      <input type="text" inputmode="decimal" class="betrag" id="pb-einkauf-feld" />
+      <label><b>Einkaufspreis (nur Anzeige – wird beim Monatsabschluss aus den Kassenbons gepflegt):</b></label>
+      <input type="text" inputmode="decimal" class="betrag" id="pb-einkauf-feld" readonly disabled />
       <label><b>Verkaufspreis:</b></label>
       <input type="text" inputmode="decimal" class="betrag" id="pb-verkauf-feld" />
       <label><b>Helferpreis:</b></label>

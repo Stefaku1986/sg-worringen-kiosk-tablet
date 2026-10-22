@@ -748,16 +748,41 @@ async function sonstigeAusgabenSumme(veranstaltung, seit) {
 // Ereignis - eine Korrektur erfolgt ausschliesslich per Storno.
 // ---------------------------------------------------------------------
 
+// Runde 62: Einkaeufe werden nur noch ueber eine Entnahme bezahlt. Mit
+// einkauf = {haendler, bonNr, kaufdatum (YYYY-MM-DD)} sind alle drei Angaben
+// Pflicht - der Bon wird beim Monatsabschluss zu Hause in die Handkasse
+// gebucht. Ohne einkauf bleiben die Spalten null (Pendant zu
+// repository._einkauf_angaben_pruefen).
+export function einkaufAngabenPruefen(einkauf) {
+  if (!einkauf) return { haendler: null, bon_nr: null, kaufdatum: null };
+  const haendler = (einkauf.haendler || "").trim();
+  const bonNr = (einkauf.bonNr || "").trim();
+  const kaufdatum = (einkauf.kaufdatum || "").trim();
+  if (!haendler) throw new Error("Bei einem Einkauf ist der Händler erforderlich.");
+  if (!bonNr) throw new Error("Bei einem Einkauf ist die Bonnummer erforderlich.");
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(kaufdatum);
+  const tag = m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])) : null;
+  if (!tag || tag.getMonth() !== Number(m[2]) - 1 || tag.getDate() !== Number(m[3])) {
+    throw new Error("Bei einem Einkauf ist ein gültiges Kaufdatum erforderlich.");
+  }
+  const heute = new Date();
+  heute.setHours(0, 0, 0, 0);
+  if (tag > heute) throw new Error("Das Kaufdatum darf nicht in der Zukunft liegen.");
+  return { haendler, bon_nr: bonNr, kaufdatum };
+}
+
 export async function bargeldEntnahmeErfassen(
   veranstaltung,
   betrag,
   empfaenger,
   kommentar,
   benutzerName,
-  kassensturzId = null
+  kassensturzId = null,
+  einkauf = null
 ) {
   if (betrag == null || betrag <= 0) throw new Error("Betrag muss größer als 0 sein.");
   if (!empfaenger || !empfaenger.trim()) throw new Error("Empfänger ist erforderlich.");
+  const bon = einkaufAngabenPruefen(einkauf);
   const id = neueId();
   const gid = await geraetId();
   await put("bargeld_entnahmen", {
@@ -774,6 +799,9 @@ export async function bargeldEntnahmeErfassen(
     synced: false,
     synced_at: null,
     benutzer: benutzerName,
+    haendler: bon.haendler,
+    bon_nr: bon.bon_nr,
+    kaufdatum: bon.kaufdatum,
   });
   return id;
 }
@@ -811,6 +839,9 @@ export async function bargeldEntnahmeStornieren(entnahmeId, benutzerName, kommen
     synced: false,
     synced_at: null,
     benutzer: benutzerName,
+    haendler: entnahme.haendler ?? null,
+    bon_nr: entnahme.bon_nr ?? null,
+    kaufdatum: entnahme.kaufdatum ?? null,
   });
   return stornoId;
 }
@@ -1839,6 +1870,23 @@ function wareneinsatzAusPositionen(positionen, preise) {
 // in produkte.kategorie, in der Reihenfolge, in der sie im Bericht stehen.
 // Pendant zu repository.KATEGORIEN.
 export const KATEGORIEN = ["Getraenk", "Speise"];
+
+// Runde 61 (Nutzerwunsch 20.10.2026): Allgemeine ("sonstige") Ausgaben -
+// Reinigungsmittel, Reparaturen, Material - werden 50/50 auf Jugend- und
+// Seniorenkasse verteilt, UNABHAENGIG davon, auf welcher Kasse sie gebucht
+// wurden: solche Ausgaben kommen dem Kiosk als Ganzem zugute, welche Kasse
+// beim Erfassen aktiv war ist Zufall. Pendant zu
+// repository._allgemeine_ausgaben_haelftig.
+//
+// Gerechnet wird in ganzen CENT, nicht in Euro: rund2(41.33/2) liefert 20.66
+// statt 20.67, weil 20.665 binaer als 20.664999... abgelegt ist. Ueber die
+// Cent-Division ist die Aufteilung exakt - auch bei negativen Summen
+// (Storno-Ueberhang). Der Rest-Cent geht an die Jugendkasse.
+function allgemeineAusgabenHaelftig(summe) {
+  const cents = Math.round(summe * 100);
+  const seniorenCents = Math.floor(cents / 2);
+  return { Jugend: (cents - seniorenCents) / 100, Senioren: seniorenCents / 100 };
+}
 const MONATS_FELDER = ["erloes", "mwst_7", "mwst_19", "gewinn", "pfand", "wareneinsatz"];
 
 // Runde 46: Erst je Kasse UND Warengruppe summieren; die Werte je Kasse sind
@@ -1996,6 +2044,19 @@ export async function auswertungJeKasse() {
     const betrag = verbucht[v] || 0;
     k.gewinn = rund2(k.gewinn + betrag);
     k.pfand = rund2(k.pfand - betrag);
+  }
+
+  // Runde 61: allgemeine Ausgaben mindern jetzt den Gewinn (vorher standen sie
+  // erst eine Stufe spaeter im Endergebnis). Schiedsrichter-Auszahlungen
+  // bleiben bewusst DRAUSSEN - die bucht der Nutzer in seiner Handkasse.
+  const ausgabenGesamt = await sonstigeAusgabenJeKasse();
+  const anteile = allgemeineAusgabenHaelftig(
+    VERANSTALTUNGEN.reduce((s, v) => s + (ausgabenGesamt[v] || 0), 0)
+  );
+  for (const v of VERANSTALTUNGEN) {
+    const anteil = anteile[v] || 0;
+    ergebnis[v].sonstige_ausgaben_anteil = anteil;
+    ergebnis[v].gewinn = rund2(ergebnis[v].gewinn - anteil);
   }
   return ergebnis;
 }
@@ -2412,6 +2473,21 @@ export async function monatsabrechnung(jahr, monat) {
     VERANSTALTUNGEN.reduce((s, v) => s + jeKasse[v].wareneinsatz, 0)
   );
 
+  // Runde 61: Die allgemeinen Ausgaben des Monats mindern jetzt den Gewinn je
+  // Kasse, 50/50 verteilt. Bewusst nur auf Kassen-Ebene, nicht in den
+  // Warengruppen-Zeilen: ob Reinigungsmittel den Getraenken oder den Speisen
+  // zuzurechnen sind, laesst sich nicht sinnvoll beantworten. Der Bericht
+  // weist den Abzug als eigene Zeile je Kasse aus, damit die Rechnung
+  // "Getraenke + Speisen - allgemeine Ausgaben = Kasse" sichtbar aufgeht.
+  const ausgabenAnteile = allgemeineAusgabenHaelftig(
+    VERANSTALTUNGEN.reduce((s, v) => s + (sonstigeAusgabenJeKasseM[v] || 0), 0)
+  );
+  for (const v of VERANSTALTUNGEN) {
+    const anteil = ausgabenAnteile[v] || 0;
+    jeKasse[v].sonstige_ausgaben_anteil = anteil;
+    jeKasse[v].gewinn = rund2(jeKasse[v].gewinn - anteil);
+  }
+
   const gesamtErloes = rund2(VERANSTALTUNGEN.reduce((s, v) => s + jeKasse[v].erloes, 0));
   const gesamtGewinn = rund2(VERANSTALTUNGEN.reduce((s, v) => s + jeKasse[v].gewinn, 0));
   const gesamtPfand = rund2(VERANSTALTUNGEN.reduce((s, v) => s + jeKasse[v].pfand, 0));
@@ -2460,7 +2536,9 @@ export async function monatsabrechnung(jahr, monat) {
     gesamt_schiedsrichter: gesamtSchiedsrichter,
     gesamt_ergebnis_nach_schiedsrichter: rund2(gesamtGewinn - gesamtSchiedsrichter),
     gesamt_sonstige_ausgaben: gesamtSonstigeAusgaben,
-    gesamt_ergebnis_nach_ausgaben: rund2(gesamtGewinn - gesamtSchiedsrichter - gesamtSonstigeAusgaben),
+    // Runde 61: NICHT mehr "- gesamtSonstigeAusgaben" - die stecken seit dieser
+    // Runde schon im Gewinn. Ein zweiter Abzug hier waere eine Doppelzaehlung.
+    gesamt_ergebnis_nach_ausgaben: rund2(gesamtGewinn - gesamtSchiedsrichter),
     gesamt_umsatzsteuer: gesamtUmsatzsteuer,
     mwst_zahllast: rund2(gesamtUmsatzsteuer - gesamtVorsteuer),
     abschreibungen,
