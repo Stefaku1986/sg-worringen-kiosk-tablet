@@ -1871,21 +1871,67 @@ function wareneinsatzAusPositionen(positionen, preise) {
 // Pendant zu repository.KATEGORIEN.
 export const KATEGORIEN = ["Getraenk", "Speise"];
 
-// Runde 61 (Nutzerwunsch 20.10.2026): Allgemeine ("sonstige") Ausgaben -
-// Reinigungsmittel, Reparaturen, Material - werden 50/50 auf Jugend- und
-// Seniorenkasse verteilt, UNABHAENGIG davon, auf welcher Kasse sie gebucht
-// wurden: solche Ausgaben kommen dem Kiosk als Ganzem zugute, welche Kasse
-// beim Erfassen aktiv war ist Zufall. Pendant zu
-// repository._allgemeine_ausgaben_haelftig.
-//
-// Gerechnet wird in ganzen CENT, nicht in Euro: rund2(41.33/2) liefert 20.66
-// statt 20.67, weil 20.665 binaer als 20.664999... abgelegt ist. Ueber die
-// Cent-Division ist die Aufteilung exakt - auch bei negativen Summen
-// (Storno-Ueberhang). Der Rest-Cent geht an die Jugendkasse.
-function allgemeineAusgabenHaelftig(summe) {
+// Runde 62 (Nutzerwunsch 23.10.2026, loest die 50/50-Regel aus Runde 61 ab):
+// Allgemeine ("sonstige") Ausgaben - Reinigungsmittel, Reparaturen, Material -
+// werden nach dem UMSATZANTEIL der Kassen verteilt, unabhaengig davon, auf
+// welcher Kasse sie gebucht wurden. Gleicher Schluessel wie bei der
+// Verteilung der Kassenbons auf die Handkassen. erloes = Warenerloes brutto
+// OHNE Pfand je Kasse; ohne Umsatz 50/50. Gerechnet in ganzen CENT, der
+// Rest geht an die Jugendkasse. Pendant zu
+// repository._allgemeine_ausgaben_nach_umsatz (dort floor(x + 0,5), damit
+// beide Apps identisch runden).
+export function allgemeineAusgabenNachUmsatz(summe, erloes) {
   const cents = Math.round(summe * 100);
-  const seniorenCents = Math.floor(cents / 2);
+  const jugend = Math.max(erloes.Jugend || 0, 0);
+  const senioren = Math.max(erloes.Senioren || 0, 0);
+  const seniorenCents =
+    jugend + senioren <= 0
+      ? Math.floor(cents / 2)
+      : Math.round((cents * senioren) / (jugend + senioren));
   return { Jugend: (cents - seniorenCents) / 100, Senioren: seniorenCents / 100 };
+}
+
+// Runde 62: allgemeine Ausgaben und Warenerloes (ohne Pfand) je Kasse vom
+// 1. Januar bis Ende des Monats (Ortszeit). monat = 0 -> leer.
+// Pendant zu repository._jahreswerte_bis.
+async function jahreswerteBis(jahr, monat) {
+  const erloes = { Jugend: 0, Senioren: 0 };
+  if (monat < 1) return { summe: 0, erloes };
+  const von = `${String(jahr).padStart(4, "0")}-01`;
+  const bis = `${String(jahr).padStart(4, "0")}-${String(monat).padStart(2, "0")}`;
+  const imZeitraum = (datum) => {
+    const m = lokalerMonat(datum);
+    return m >= von && m <= bis;
+  };
+  let summe = 0;
+  for (const a of await getAll("sonstige_ausgaben")) {
+    if (imZeitraum(a.datum)) summe += a.betrag || 0;
+  }
+  const vorgaenge = await getAll("kassiervorgaenge");
+  const vorgangJeId = Object.fromEntries(vorgaenge.map((v) => [v.id, v]));
+  for (const p of await getAll("positionen")) {
+    const v = vorgangJeId[p.vorgang_id];
+    if (!v || !(v.veranstaltung in erloes) || !imZeitraum(v.datum)) continue;
+    erloes[v.veranstaltung] += (p.menge || 0) * (p.einzelpreis || 0);
+  }
+  return { summe: rund2(summe), erloes };
+}
+
+// Runde 62: Anteil der allgemeinen Ausgaben je Kasse fuer EINEN Monat,
+// kumuliert seit Jahresbeginn: (Ausgaben Jan..Monat x Umsatzanteil
+// Jan..Monat) - (Ausgaben Jan..Vormonat x Umsatzanteil Jan..Vormonat). Ueber
+// das Jahr traegt so jede Kasse exakt ihren Umsatzanteil; Verschiebungen
+// werden im Folgemonat ausgeglichen. Pendant zu
+// repository.allgemeine_ausgaben_anteile_monat.
+export async function allgemeineAusgabenAnteileMonat(jahr, monat) {
+  const bisW = await jahreswerteBis(jahr, monat);
+  const vorW = await jahreswerteBis(jahr, monat - 1);
+  const bis = allgemeineAusgabenNachUmsatz(bisW.summe, bisW.erloes);
+  const vor = allgemeineAusgabenNachUmsatz(vorW.summe, vorW.erloes);
+  return {
+    Jugend: rund2(bis.Jugend - vor.Jugend),
+    Senioren: rund2(bis.Senioren - vor.Senioren),
+  };
 }
 const MONATS_FELDER = ["erloes", "mwst_7", "mwst_19", "gewinn", "pfand", "wareneinsatz"];
 
@@ -2050,8 +2096,10 @@ export async function auswertungJeKasse() {
   // erst eine Stufe spaeter im Endergebnis). Schiedsrichter-Auszahlungen
   // bleiben bewusst DRAUSSEN - die bucht der Nutzer in seiner Handkasse.
   const ausgabenGesamt = await sonstigeAusgabenJeKasse();
-  const anteile = allgemeineAusgabenHaelftig(
-    VERANSTALTUNGEN.reduce((s, v) => s + (ausgabenGesamt[v] || 0), 0)
+  // Runde 62: nach Umsatzanteil (Warenerloes ohne Pfand) statt 50/50.
+  const anteile = allgemeineAusgabenNachUmsatz(
+    VERANSTALTUNGEN.reduce((s, v) => s + (ausgabenGesamt[v] || 0), 0),
+    { Jugend: ergebnis.Jugend.erloes, Senioren: ergebnis.Senioren.erloes }
   );
   for (const v of VERANSTALTUNGEN) {
     const anteil = anteile[v] || 0;
@@ -2474,14 +2522,13 @@ export async function monatsabrechnung(jahr, monat) {
   );
 
   // Runde 61: Die allgemeinen Ausgaben des Monats mindern jetzt den Gewinn je
-  // Kasse, 50/50 verteilt. Bewusst nur auf Kassen-Ebene, nicht in den
+  // Kasse, nach Umsatzanteil verteilt (Runde 62). Bewusst nur auf Kassen-Ebene, nicht in den
   // Warengruppen-Zeilen: ob Reinigungsmittel den Getraenken oder den Speisen
   // zuzurechnen sind, laesst sich nicht sinnvoll beantworten. Der Bericht
   // weist den Abzug als eigene Zeile je Kasse aus, damit die Rechnung
   // "Getraenke + Speisen - allgemeine Ausgaben = Kasse" sichtbar aufgeht.
-  const ausgabenAnteile = allgemeineAusgabenHaelftig(
-    VERANSTALTUNGEN.reduce((s, v) => s + (sonstigeAusgabenJeKasseM[v] || 0), 0)
-  );
+  // Runde 62: nach Umsatzanteil seit Jahresbeginn statt 50/50.
+  const ausgabenAnteile = await allgemeineAusgabenAnteileMonat(jahr, monat);
   for (const v of VERANSTALTUNGEN) {
     const anteil = ausgabenAnteile[v] || 0;
     jeKasse[v].sonstige_ausgaben_anteil = anteil;

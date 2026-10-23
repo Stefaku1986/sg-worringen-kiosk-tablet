@@ -3317,7 +3317,7 @@ async function renderAuswertung() {
       <div class="kennzahl-zeile"><span>MwSt. 7 %</span><span>${euro(k.mwst_7)}</span></div>
       <div class="kennzahl-zeile"><span>MwSt. 19 %</span><span>${euro(k.mwst_19)}</span></div>
       <div class="kennzahl-zeile"><span>Offenes Pfand</span><span>${euro(k.pfand)}</span></div>
-      <div class="kennzahl-zeile"><span>Allgemeine Ausgaben (50 % Anteil)</span><span>${euro(-(k.sonstige_ausgaben_anteil || 0))}</span></div>
+      <div class="kennzahl-zeile"><span>Allgemeine Ausgaben (Anteil nach Umsatz)</span><span>${euro(-(k.sonstige_ausgaben_anteil || 0))}</span></div>
       <div class="kennzahl-zeile gesamt"><span>Gewinn</span><span>${euro(k.gewinn)}</span></div>
       <div class="kennzahl-zeile" title="Einkaufswert der tatsächlich verkauften Ware (verkaufte Menge × tatsächlich gezahltem Einkaufspreis pro Stück). Ist bereits im Gewinn oben abgezogen. Noch nicht verkaufte Ware zählt hier nicht mit."><span>Wareneinsatz (verkaufte Ware)</span><span>${euro(k.wareneinsatz)}</span></div>
     `;
@@ -3498,7 +3498,7 @@ function monatsabrechnungHtml(m) {
     const anteil = m.je_kasse[v].sonstige_ausgaben_anteil || 0;
     if (anteil) {
       jeKasseZeilen +=
-        `<tr><td>${v} · allgemeine Ausgaben (50 %)</td>` +
+        `<tr><td>${v} · allgemeine Ausgaben (Anteil nach Umsatz)</td>` +
         `<td style="text-align:right">–</td><td style="text-align:right">–</td>` +
         `<td style="text-align:right">–</td><td style="text-align:right">–</td>` +
         `<td style="text-align:right">${euro(-anteil)}</td>` +
@@ -3525,7 +3525,7 @@ function monatsabrechnungHtml(m) {
   return `
     <h2>Je Kasse und Warengruppe</h2>
     <table><thead><tr><th>Kasse</th><th>Erlös</th><th>MwSt. 7%</th><th>MwSt. 19%</th><th>Wareneinsatz</th><th>Gewinn</th><th>Pfand</th></tr></thead><tbody>${jeKasseZeilen}</tbody></table>
-    <p class="hinweis">„Wareneinsatz“ ist der Einkaufswert der in diesem Monat tatsächlich verkauften Stücke und im Gewinn bereits abgezogen – nicht der gesamte Wareneinkauf des Monats. Pfand ist eine Kaution, kein Erlös, und fließt nicht in den Gewinn ein. Die allgemeinen Ausgaben werden je zur Hälfte auf beide Kassen verteilt – unabhängig davon, auf welcher Kasse sie erfasst wurden – und sind im Gewinn der Kasse bereits abgezogen. Schiedsrichter-Auszahlungen sind es nicht.</p>
+    <p class="hinweis">„Wareneinsatz“ ist der Einkaufswert der in diesem Monat tatsächlich verkauften Stücke und im Gewinn bereits abgezogen – nicht der gesamte Wareneinkauf des Monats. Pfand ist eine Kaution, kein Erlös, und fließt nicht in den Gewinn ein. Die allgemeinen Ausgaben werden nach dem Umsatzanteil seit Jahresbeginn auf beide Kassen verteilt – unabhängig davon, auf welcher Kasse sie erfasst wurden; Verschiebungen werden im Folgemonat ausgeglichen – und sind im Gewinn der Kasse bereits abgezogen. Schiedsrichter-Auszahlungen sind es nicht.</p>
 
     <h2>Wareneinkauf des Monats (Summe)</h2>
     ${m.wareneinkauf_teilweise_geschaetzt ? '<p class="hinweis">Für einzelne Wareneingänge wurde kein Preis erfasst – dort wurde der am Produkt hinterlegte Einkaufspreis geschätzt.</p>' : ""}
